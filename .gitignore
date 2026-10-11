@@ -1,0 +1,42 @@
+# Bağımlılıklar (Dependencies)
+node_modules/
+package-lock.json.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# WhatsApp Oturum ve Kimlik Bilgileri (Özel / Gizli Kalması Gerekenler)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Veritabanı Dosyaları (Database / Müşteri Verileri)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+emanet.db
+
+# Ortam Değişkenleri ve Gizli Anahtarlar (Environment Variables & Secrets)
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.cert
+
+# Geçici Dosyalar ve İşletim Sistemi Kalıntıları (Temp & OS files)
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+*.tmp
+*.temp
+*.log
+
+# Ofis ve Düzenleyici Geçici / Kilit Dosyaları (Office & Editor Lock Files)
+*.docx
+*.doc
+.~lock*
+~$*
+.vscode/
+.idea/

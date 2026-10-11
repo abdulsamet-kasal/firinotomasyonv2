@@ -1,0 +1,17 @@
+{
+  "name": "emanet-lahmacun-takip",
+  "version": "1.0.0",
+  "description": "Emanet Lahmacun/Pide Takip ve WhatsApp Bildirim Sistemi",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "docx": "^9.8.1",
+    "express": "^4.21.0",
+    "qrcode": "^1.5.4",
+    "sql.js": "^1.11.0",
+    "whatsapp-web.js": "^1.26.0"
+  }
+}
