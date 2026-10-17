@@ -913,17 +913,20 @@ function whatsappFallback(telefon, mesaj, musteriAdi) {
 }
 
 // ─── ÖDEME DURUMU ───────────────────────────────────────────────────
-// Ödeme durumunu ayarla (ödeme alındı / geri al)
-async function odemeAyarla(id, yeni) {
+// Ödeme durumunu ayarla (ödeme alındı / geri al). Tip: 'Nakit' | 'Kart' (veya null = geri al)
+async function odemeAyarla(id, yeni, tip) {
   try {
+    const govde = yeni === 'Ödendi' ? { odeme_durumu: yeni, odeme_tipi: tip || 'Nakit' } : { odeme_durumu: yeni };
     const res = await apiFetch(`${API_BASE}/api/siparis/${id}/odeme`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ odeme_durumu: yeni })
+      body: JSON.stringify(govde)
     });
     const data = await res.json();
     if (data.success) {
-      showToast(yeni === 'Ödendi' ? 'Ödeme alındı olarak işaretlendi. 💵' : 'Ödeme "bekliyor" olarak işaretlendi.', 'info');
+      showToast(yeni === 'Ödendi'
+        ? `Ödeme alındı (${govde.odeme_tipi === 'Kart' ? '💳 Kart (POS)' : '💵 Nakit'}) olarak işaretlendi.`
+        : 'Ödeme "bekliyor" olarak işaretlendi.', 'info');
       aktifSiparisleriYukle();
       cikanlariYukle();
       if (raporVerisi) raporYukle(raporModu);
@@ -935,16 +938,21 @@ async function odemeAyarla(id, yeni) {
   }
 }
 
-// Ödeme kontrolü: ödenmemişse "Ödeme Alındı" butonu, ödenmişse "Ödendi" rozeti gösterir
+// Ödeme kontrolü: ödenmemişse "Nakit"/"Kart (POS)" seçim butonları, ödenmişse "Ödendi" rozeti gösterir
 function odemeButonu(s) {
   const odendi = s.odeme_durumu === 'Ödendi';
   if (odendi) {
+    const ikon = s.odeme_tipi === 'Kart' ? '💳' : (s.odeme_tipi === 'Nakit' ? '💵' : '');
+    const etiket = s.odeme_tipi === 'Kart' ? 'Kart (POS)' : (s.odeme_tipi === 'Nakit' ? 'Nakit' : '');
     return `<span class="inline-flex items-center gap-2">
-      <span class="text-[11px] font-bold px-2 py-1 rounded-lg border bg-emerald-600/20 border-emerald-500/40 text-emerald-400">✅ Ödendi</span>
-      <button onclick="odemeAyarla(${s.id}, 'Bekliyor')" class="text-[10px] text-dark-500 hover:text-amber-400 underline" title="Yanlışlıkla işaretlendiyse geri al">geri al</button>
+      <span class="text-[11px] font-bold px-2 py-1 rounded-lg border bg-emerald-600/20 border-emerald-500/40 text-emerald-400" title="${etiket ? 'Ödeme tipi: ' + etiket : ''}">✅ Ödendi${ikon ? ' ' + ikon : ''}</span>
+      <button onclick="odemeAyarla(${s.id}, 'Bekliyor')" class="text-[10px] text-dark-500 hover:text-amber-400 underline" title="Yanlışlıkla işaretlendiyse geri al (tekrar ödeyerek tipi değiştirebilirsiniz)">geri al</button>
     </span>`;
   }
-  return `<button onclick="odemeAyarla(${s.id}, 'Ödendi')" class="btn-press text-[11px] font-bold px-3 py-1.5 rounded-lg border bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 transition-all" title="Ödemeyi alındı olarak işaretle">💵 Ödeme Alındı</button>`;
+  return `<span class="inline-flex items-center gap-1">
+    <button onclick="odemeAyarla(${s.id}, 'Ödendi', 'Nakit')" class="btn-press text-[11px] font-bold px-2.5 py-1.5 rounded-lg border bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 transition-all" title="Nakit ödeme alındı">💵 Nakit</button>
+    <button onclick="odemeAyarla(${s.id}, 'Ödendi', 'Kart')" class="btn-press text-[11px] font-bold px-2.5 py-1.5 rounded-lg border bg-sky-600 hover:bg-sky-500 text-white border-sky-500 transition-all" title="POS'tan kart ile ödeme alındı">💳 Kart</button>
+  </span>`;
 }
 
 // ─── SİPARİŞ SİL ────────────────────────────────────────────────────
@@ -1059,10 +1067,11 @@ function raporuCiz(data, tip) {
       const cikisZaman = new Date(s.cikis_zamani).toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
       const tutar = siparisTutar(s);
       const odendi = (s.odeme_durumu === 'Ödendi');
+      const odemeIkon = s.odeme_tipi === 'Kart' ? '💳' : '💵';
       return `
         <div class="flex items-center justify-between bg-dark-800/40 rounded-xl px-4 py-3 hover:bg-dark-800/60 transition-colors">
           <div class="flex items-center gap-3">
-            <span class="${odendi ? 'text-emerald-400' : 'text-amber-400'}">${odendi ? '💵' : '⏳'}</span>
+            <span class="${odendi ? 'text-emerald-400' : 'text-amber-400'}">${odendi ? odemeIkon : '⏳'}</span>
             <div>
               <span class="font-semibold text-gray-200 text-sm">${escapeHtml(s.musteri_adi)}</span>
               <span class="text-dark-500 text-sm ml-2">${escapeHtml(s.urun_turu)}</span>
@@ -1123,6 +1132,8 @@ async function pdfIndir(zorlaGunluk = false) {
     const toplamSiparis = data.toplam?.toplam_siparis || 0;
     const toplamCiro = data.toplam?.toplam_ciro || 0;
     const tahsilCiro = data.toplam?.tahsil_ciro || 0;
+    const tahsilNakit = data.toplam?.tahsil_nakit || 0;
+    const tahsilKart = data.toplam?.tahsil_kart || 0;
     const bekleyenCiro = data.toplam?.bekleyen_ciro || 0;
 
     const tamamlananlar = data.tamamlananlar || [];
@@ -1146,7 +1157,9 @@ async function pdfIndir(zorlaGunluk = false) {
 
     const teslimatRows = tamamlananlar.map((s, i) => {
       const cikisZaman = new Date(s.cikis_zamani).toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
-      const odeme = s.odeme_durumu === 'Ödendi' ? 'Odendi' : 'Bekliyor';
+      const odeme = s.odeme_durumu === 'Ödendi'
+        ? ('Odendi' + (s.odeme_tipi ? ` (${s.odeme_tipi})` : ''))
+        : 'Bekliyor';
       return [(i+1).toString(), s.musteri_adi, s.urun_turu, s.adet.toString(), `${siparisTutar(s)} TL`, odeme, cikisZaman];
     });
 
@@ -1166,7 +1179,7 @@ async function pdfIndir(zorlaGunluk = false) {
         { columns:[
           { width:'*', stack:[{ text:'Toplam Siparis', style:'boxLabel' },{ text:toplamSiparis.toString(), style:'boxValue' }], margin:[0,0,5,0] },
           { width:'*', stack:[{ text:'Toplam Adet', style:'boxLabel' },{ text:toplamAdet.toString(), style:'boxValue' }], margin:[5,0,5,0] },
-          { width:'*', stack:[{ text:'Tahsil Edilen', style:'boxLabel' },{ text:`${tahsilCiro} TL`, style:'boxValue' }], margin:[5,0,5,0] },
+          { width:'*', stack:[{ text:'Tahsil Edilen', style:'boxLabel' },{ text:`${tahsilCiro} TL`, style:'boxValue' }, { text:`Nakit: ${tahsilNakit} TL - Kart: ${tahsilKart} TL`, style:'boxSub' }], margin:[5,0,5,0] },
           { width:'*', stack:[{ text:'Bekleyen Odeme', style:'boxLabel' },{ text:`${bekleyenCiro} TL`, style:'boxValue' }], margin:[5,0,5,0] },
           { width:'*', stack:[{ text:'TOPLAM CIRO', style:'boxLabel' },{ text:`${toplamCiro} TL`, style:'boxValueHL' }], margin:[5,0,0,0] }
         ], margin:[0,0,0,25] },
@@ -1191,6 +1204,7 @@ async function pdfIndir(zorlaGunluk = false) {
         sectionTitle:{ fontSize:14, bold:true, color:'#333', font:'Roboto' },
         boxLabel:{ fontSize:9, color:'#888', alignment:'center', margin:[8,8,8,2], font:'Roboto' },
         boxValue:{ fontSize:18, bold:true, color:'#333', alignment:'center', margin:[8,0,8,8], font:'Roboto' },
+        boxSub:{ fontSize:9, color:'#666', alignment:'center', margin:[0,0,8,8], font:'Roboto' },
         boxValueHL:{ fontSize:18, bold:true, color:'#e65100', alignment:'center', margin:[8,0,8,8], font:'Roboto' },
         tH:{ fontSize:10, bold:true, color:'#fff', fillColor:'#e65100', margin:[4,6,4,6], font:'Roboto' },
         emptyText:{ fontSize:11, color:'#999', italics:true, margin:[0,10,0,0], font:'Roboto' }
@@ -1630,6 +1644,11 @@ async function kasaYukle() {
     bEl.value = t.slice(0, 8) + '01';
     sEl.value = t;
   }
+  // POS mutabakat tarih alanları varsayılan: bugün
+  ['pos-z-tarih', 'pos-satis-tarih'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = localDateStr();
+  });
   const baslangic = bEl.value;
   const bitis = sEl.value;
   try {
@@ -1638,12 +1657,21 @@ async function kasaYukle() {
     document.getElementById('kasa-gelir').textContent = fmtPara(d.gelir);
     document.getElementById('kasa-bekleyen').textContent = fmtPara(d.bekleyen);
     document.getElementById('kasa-gider').textContent = fmtPara(d.gider);
+    // Nakit / Kart kırılımı (+ siparişsiz POS satışları)
+    const kirEl = document.getElementById('kasa-kirilim');
+    if (kirEl) {
+      const posSatis = d.pos_satis || 0;
+      let metin = `💵 Nakit ${fmtPara(d.gelir_nakit || 0)} • 💳 Kart ${fmtPara(d.gelir_kart || 0)}`;
+      if (posSatis > 0) metin += ` • 🧾 POS satışı ${fmtPara(posSatis)}`;
+      kirEl.textContent = metin;
+    }
     const netEl = document.getElementById('kasa-net');
     netEl.textContent = fmtPara(d.net);
     netEl.className = 'text-3xl font-black ' + (d.net >= 0 ? 'text-fire-300' : 'text-red-400');
     document.getElementById('kasa-tarih').textContent =
       `${d.baslangic} → ${d.bitis} arası • ${d.siparis_sayisi} sipariş (${d.toplam_adet} adet) • Toplam ciro ${fmtPara(d.ciro)}`;
     await giderleriYukle(baslangic, bitis);
+    posMutabakatYukle(baslangic, bitis);
     kasaGrafikYukle(baslangic, bitis);
   } catch (err) {
     if (err.message !== 'UNAUTHORIZED') showToast('Kasa yüklenemedi!', 'error');
@@ -1748,6 +1776,112 @@ async function giderSil(id) {
     const res = await apiFetch(`${API_BASE}/api/giderler/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) { showToast('Gider silindi.', 'info'); kasaYukle(); }
+    else showToast(data.error || 'Silinemedi!', 'error');
+  } catch (err) {
+    if (err.message !== 'UNAUTHORIZED') showToast('Sunucu bağlantı hatası!', 'error');
+  }
+}
+
+// ─── POS MUTABAKATI (Z raporu + siparişsiz satışlar) ────────────────
+async function posMutabakatYukle(baslangic, bitis) {
+  const liste = document.getElementById('pos-mutabakat-liste');
+  const ozetEl = document.getElementById('pos-mutabakat-ozet');
+  if (!liste) return;
+  try {
+    const res = await apiFetch(`${API_BASE}/api/pos/mutabakat?baslangic=${baslangic}&bitis=${bitis}`);
+    const d = await res.json();
+    if (ozetEl) {
+      const fark = d.fark || 0;
+      const ok = Math.abs(fark) < 0.01;
+      ozetEl.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-dark-400 text-xs">Sistem 💳 toplamı: <b class="text-sky-300">${fmtPara(d.sistem_kart)}</b> (sipariş ${fmtPara(d.sistem_kart_siparis)} + siparişsiz ${fmtPara(d.sistem_kart_siparissiz)}) • Z raporu: <b class="text-gray-200">${fmtPara(d.pos_z)}</b></span>
+          <span class="text-xs font-bold px-3 py-1.5 rounded-lg border ${ok ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400' : 'bg-red-600/20 border-red-500/40 text-red-400'}">
+            ${ok ? '✅ Uyuşuyor' : `⚠️ Fark: ${fmtPara(fark)}`}
+          </span>
+        </div>`;
+    }
+    const zKayitlari = d.z_kayitlari || [];
+    if (zKayitlari.length === 0) {
+      liste.innerHTML = '<p class="text-dark-500 text-xs py-3 text-center">Henüz Z raporu kaydı yok. Gün sonunda POS ekranındaki kart toplamını girin.</p>';
+      return;
+    }
+    // Her Z kaydı için günün sistem kart toplamını da çekmek yerine toplu görünüm:
+    liste.innerHTML = zKayitlari.reverse().map((z) => `
+      <div class="flex items-center justify-between bg-dark-800/40 rounded-xl px-4 py-2.5">
+        <div class="min-w-0">
+          <div class="font-semibold text-gray-200 text-sm">${z.tarih} • ${fmtPara(z.tutar)}</div>
+          <div class="text-dark-500 text-xs truncate">${escapeHtml(z.aciklama || 'POS Z raporu')}</div>
+        </div>
+        <button onclick="posZSil(${z.id})" class="text-dark-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10" title="Sil">✕</button>
+      </div>`).join('');
+  } catch (err) {
+    if (err.message !== 'UNAUTHORIZED') console.error('POS mutabakat yüklenemedi:', err);
+  }
+}
+
+async function posZKaydet() {
+  const tarih = document.getElementById('pos-z-tarih').value || localDateStr();
+  const tutar = document.getElementById('pos-z-tutar').value;
+  const aciklama = document.getElementById('pos-z-aciklama').value.trim();
+  if (!(parseFloat(tutar) > 0)) { showToast('Z raporu tutarı giriniz!', 'warning'); return; }
+  try {
+    const res = await apiFetch(`${API_BASE}/api/pos/z`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tarih, tutar, aciklama })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Z raporu kaydedildi. ✅', 'success');
+      document.getElementById('pos-z-tutar').value = '';
+      document.getElementById('pos-z-aciklama').value = '';
+      kasaYukle();
+    } else showToast(data.error || 'Kaydedilemedi!', 'error');
+  } catch (err) {
+    if (err.message !== 'UNAUTHORIZED') showToast('Sunucu bağlantı hatası!', 'error');
+  }
+}
+
+async function posZSil(id) {
+  if (!confirm('Bu Z raporu kaydı silinsin mi?')) return;
+  try {
+    const res = await apiFetch(`${API_BASE}/api/pos/z/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) { showToast('Z kaydı silindi.', 'info'); kasaYukle(); }
+    else showToast(data.error || 'Silinemedi!', 'error');
+  } catch (err) {
+    if (err.message !== 'UNAUTHORIZED') showToast('Sunucu bağlantı hatası!', 'error');
+  }
+}
+
+async function posSatisKaydet() {
+  const tarih = document.getElementById('pos-satis-tarih').value || localDateStr();
+  const tutar = document.getElementById('pos-satis-tutar').value;
+  const aciklama = document.getElementById('pos-satis-aciklama').value.trim();
+  if (!(parseFloat(tutar) > 0)) { showToast('Tutar giriniz!', 'warning'); return; }
+  try {
+    const res = await apiFetch(`${API_BASE}/api/pos/satis`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tutar, aciklama, tarih })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('POS satışı kaydedildi. ✅', 'success');
+      document.getElementById('pos-satis-tutar').value = '';
+      document.getElementById('pos-satis-aciklama').value = '';
+      kasaYukle();
+    } else showToast(data.error || 'Kaydedilemedi!', 'error');
+  } catch (err) {
+    if (err.message !== 'UNAUTHORIZED') showToast('Sunucu bağlantı hatası!', 'error');
+  }
+}
+
+async function posSatisSil(id) {
+  if (!confirm('Bu POS satışı kaydı silinsin mi?')) return;
+  try {
+    const res = await apiFetch(`${API_BASE}/api/pos/satis/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) { showToast('POS satışı silindi.', 'info'); kasaYukle(); }
     else showToast(data.error || 'Silinemedi!', 'error');
   } catch (err) {
     if (err.message !== 'UNAUTHORIZED') showToast('Sunucu bağlantı hatası!', 'error');
@@ -1902,6 +2036,11 @@ function csvIndir(tur) {
     const s = document.getElementById('karlilik-bitis');
     if (b && s && b.value && s.value) url += `?baslangic=${b.value}&bitis=${s.value}`;
   }
+  // POS mutabakat raporunda Kasa sekmesindeki seçili aralık kullanılır
+  if (tur === 'pos-mutabakat') {
+    const { baslangic, bitis } = donemAraligi('kasa');
+    url += `?baslangic=${baslangic}&bitis=${bitis}`;
+  }
   window.open(url, '_blank');
   showToast(tur === 'detayli'
     ? 'Detaylı rapor (CSV) indiriliyor... Excel ile açabilirsiniz 📊'
@@ -1951,8 +2090,12 @@ function detayliPdfOlustur(r) {
      { text: 'Toplam Adet', style: 'ozL' }, { text: String(o.toplam_adet || 0), style: 'ozV' }],
     [{ text: 'Ciro (Satış)', style: 'ozL' }, { text: tl(o.ciro), style: 'ozV' },
      { text: 'Tahsil Edilen', style: 'ozL' }, { text: tl(o.tahsil), style: 'ozV' }],
-    [{ text: 'Bekleyen Ödeme', style: 'ozL' }, { text: tl(o.bekleyen), style: 'ozV' },
-     { text: 'Ortalama Sepet', style: 'ozL' }, { text: tl(o.ortalama_sepet), style: 'ozV' }],
+    [{ text: 'Tahsil – Nakit', style: 'ozL' }, { text: tl(o.tahsil_nakit), style: 'ozV' },
+     { text: 'Tahsil – Kart (POS)', style: 'ozL' }, { text: tl(o.tahsil_kart), style: 'ozV' }],
+    [{ text: 'POS Satışı (Siparişsiz)', style: 'ozL' }, { text: tl(o.pos_satis), style: 'ozV' },
+     { text: 'Bekleyen Ödeme', style: 'ozL' }, { text: tl(o.bekleyen), style: 'ozV' }],
+    [{ text: 'Ortalama Sepet', style: 'ozL' }, { text: tl(o.ortalama_sepet), style: 'ozV' },
+     { text: '', style: 'ozL' }, { text: '', style: 'ozV' }],
     [{ text: 'Malzeme Maliyeti', style: 'ozL' }, { text: tl(o.malzeme_maliyeti), style: 'ozV' },
      { text: 'Brüt Kâr', style: 'ozL' }, { text: `${tl(o.brut_kar)}  (%${o.brut_marj || 0})`, style: 'ozV' }],
     [{ text: 'Diğer Giderler', style: 'ozL' }, { text: tl(o.gider_diger), style: 'ozV' },

@@ -213,6 +213,18 @@ Sistem varsayılan olarak **sadece bu bilgisayardan** (`127.0.0.1`) erişilebili
 
 ---
 
+## ✨ v1.7 Yenilikleri — POS / Kart Tahsilat Takibi
+
+- 💳 **Ödeme tipi takibi (Nakit / Kart)**: Ödeme alırken artık **"💵 Nakit"** ve **"💳 Kart"** ayrı butonları çıkar. Ödendi rozetinde hangi yolla alındığı da görünür (yanlış işaretlerse "geri al" → tekrar işaretleyerek tip değiştirilir). Önceki sürümlerde "Ödendi" işaretlenmiş siparişler **Nakit** kabul edilir.
+- 💰 **Kasa'da kırılım**: Gelir kartının altında **Nakit / Kart (+ siparişsiz POS satışı)** dökümü görünür; **net kâr** hesabına siparişsiz POS satışları da gelir olarak eklenir.
+- 🧾 **POS Mutabakatı (Z raporu)**: Kasa sekmesindeki yeni kutuya gün sonunda POS ekranındaki kart toplamı **Z raporu** olarak girilir. Sistem kendi kart tahsilatıyla (+ siparişsiz POS satışları) karşılaştırıp **farkı** hesaplar: uyuşuyorsa ✅, fark varsa ⚠️ fark tutarı gösterilir. Birden fazla Z kaydı girilebilir, silinebilir.
+- 🛒 **Siparişsiz POS satışı**: Pide üstü, ayran gibi doğrudan POS'tan satılan kart işlemleri kayıt altına alınır (mutabakata dahil, kasaya maliyeti olmayan gelir olarak eklenir).
+- 📊 **Raporlara kırılım eklendi**: Gün sonu PDF'in "Tahsil Edilen" kutusunda **Nakit / Kart** ayrımı, detaylı PDF/CSV özetinde **Tahsil – Nakit / Tahsil – Kart / POS Satışı** satırları çıkar. Siparişler CSV'sine **`odeme_tipi`** sütunu eklendi.
+- ⬇️ **Yeni CSV türü**: Kasa sekmesinden **"⬇️ POS Mutabakat (CSV)"** ile tarih aralığınıza uygun gün gün mutabakat dökümü (sipariş kart tahsilatı + siparişsiz satış + Z raporu + fark) indirilir.
+- 🗄️ Veritabanına `siparisler.odeme_tipi` kolonu ile `pos_z` (Z raporları) ve `pos_satis` (siparişsiz satışlar) tabloları eklendi (eski veritabanı otomatik yükselir).
+
+---
+
 ## ✨ v1.6 Yenilikleri
 
 - 🧰 **Stok takibi aç/kapat (isteğe bağlı)**: **Ayarlar → Stok takibi** ile stok/reçete modülünü tamamen açıp kapatabilirsiniz. **Kapalıyken**: Stok/Reçete sekmeleri gizlenir, sipariş tamamlanırken **malzeme düşümü ve kritik stok uyarısı yapılmaz**, kârlılık raporlarında maliyet **0** kabul edilir ve **tüm giderler** net kâra dahil edilir. **Açıkken** (varsayılan) sistem eskisi gibi çalışır.

@@ -4,7 +4,7 @@
 > projenin **tamamına hâkim** olması için buraya kadar her şey buraya yazıldı.
 >
 > **Güncelleme tarihi:** 2026-10-17
-> **Son sürüm:** v1.6 (+ yayınlanmamış stok sekmesi iyileştirmesi)
+> **Son sürüm:** v1.7 — POS/kart tahsilat takibi (+ yayınlanmamış stok sekmesi iyileştirmesi)
 > **Canlı sunucu:** `http://127.0.0.1:3000` (kullanıcı `baslat.bat` ile çalıştırıyor)
 
 ---
@@ -12,13 +12,14 @@
 ## 0) YENİ SOHBET İÇİN İLK OKUMA (TL;DR)
 
 - Bu proje; **fırın/unlu mamul emanet sipariş takibi + WhatsApp bildirim + stok/reçete + kasa/kârlılık** sistemidir.
-- **Tek geliştirici dosyaları:** `server.js` (backend, ~2058 satır), `public/app.js` (~2121 satır), `public/index.html` (~940 satır). Geri kalanı doküman/betik.
+- **Tek geliştirici dosyaları:** `server.js` (backend, ~2200 satır), `public/app.js` (~2270 satır), `public/index.html` (~975 satır). Geri kalanı doküman/betik.
 - **Çalıştırma:** `baslat.bat` (WhatsApp + tarayıcı açar). **Kurulum:** `kurulum.bat` (`npm install`).
 - **Test/geliştirme:** `WA_DISABLE=1` + farklı `PORT` ile ikinci bir kopya çalıştır (bkz. §9).
 - **Veritabanı:** `emanet.db` (sql.js / SQLite WASM). **Gizli:** `.env`, `.wwebjs_auth/`, `emanet.db`, `yedekler/` → `.gitignore`'da.
-- **Kâr kuralı:** brüt kâr = ciro − reçete malzeme maliyeti; net kâr = brüt kâr − diğer giderler (stok açıkken "Malzeme Alımı" gideri çift sayılmasın diye hariç).
+- **Kâr kuralı:** brüt kâr = ciro − reçete malzeme maliyeti; net kâr = brüt kâr − diğer giderler **+ siparişsiz POS satışları** (stok açıkken "Malzeme Alımı" gideri çift sayılmasın diye hariç).
 - **Stok aç/kapat:** `stok_aktif` ayarı. **2026-10-17'de kullanıcı "butonu bulamıyorum" dediği için** belirgin hale getirildi (bkz. §8).
-- **⚠️ Yayınlanmamış değişiklik var:** `public/app.js` + `public/index.html` git'te "modified", henüz commit edilmedi (bkz. §12).
+- **POS entegrasyonu (v1.7):** Ödemeler **Nakit/Kart** tipiyle işaretlenir; Kasa'da gün sonu **Z raporu mutabakatı** var (bkz. §7-§8'de v1.7 notları). Kullanıcının klasik banka POS'u var — makineye yazılım-entegrasyonu yapılması **mümkün değil**, bu yüzden elle kayıt + mutabakat yolu seçildi.
+- **⚠️ Yayınlanmamış değişiklik var:** `server.js`, `public/app.js`, `public/index.html` git'te "modified", henüz commit edilmedi (bkz. §12).
 
 ---
 
@@ -96,12 +97,14 @@ Fırınotomasyon/
 ### Temel tablolar
 | Tablo | Kolonlar |
 | :--- | :--- |
-| **siparisler** | `id`, `musteri_adi`, `telefon`, `urun_turu`, `adet`, `durum` (`Fırında`/`Tamamlandı`), `odeme_durumu` (`Bekliyor`/`Ödendi`), `giris_zamani`, `cikis_zamani`, `created_date` |
+| **siparisler** | `id`, `musteri_adi`, `telefon`, `urun_turu`, `adet`, `durum` (`Fırında`/`Tamamlandı`), `odeme_durumu` (`Bekliyor`/`Ödendi`), `odeme_tipi` (v1.7: `Nakit`/`Kart` — `Bekliyor`'ken boş), `giris_zamani`, `cikis_zamani`, `created_date` |
 | **ayarlar** | `anahtar` (PK), `deger` — anahtar/değer ayar deposu |
 | **stok** | `id`, `ad`, `birim`, `miktar`, `kritik`, `created_at` |
 | **stok_hareketleri** | `id`, `stok_id`, `tip`, `miktar`, `aciklama`, `otomatik` (0/1), `zaman` |
 | **recete** | `id`, `urun_turu`, `stok_id`, `miktar` |
 | **giderler** | `id`, `aciklama`, `miktar`, `kategori`, `tarih`, `created_at` |
+| **pos_z** (v1.7) | `id`, `tarih`, `tutar` (POS Z raporu toplamı), `aciklama`, `created_at` |
+| **pos_satis** (v1.7) | `id`, `tarih`, `tutar`, `aciklama`, `created_at` — siparişsiz kart satışları (mutabakata dahil, kasaya maliyetsiz gelir) |
 | **mesaj_log** | `id`, `telefon`, `musteri_adi`, `urun_turu`, `mesaj`, `durum`, `hata`, `yon` (`giden`/`gelen`), `zaman` |
 | **islem_log** | `id`, `kullanici`, `islem`, `detay`, `zaman` (denetim izi) |
 | **kullanicilar** | `id`, `kullanici` (UNIQUE), `sifre_hash` (scrypt), `rol` (`admin`/`personel`), `aktif`, `created_at` |
@@ -137,11 +140,17 @@ Fırınotomasyon/
 **Stok / Reçete**
 `GET|POST /api/stok`, `PUT|DELETE /api/stok/:id`, `POST /api/stok/:id/hareket`, `GET /api/stok/hareketler`, `GET /api/recete`, `PUT /api/recete/:urun`
 
-**Gider / Kasa / Kârlılık**
-`GET|POST /api/giderler`, `DELETE /api/giderler/:id`, `GET /api/kasa?baslangic=&bitis=`, `GET /api/rapor/karlilik`, `GET /api/rapor/musteriler`, `GET /api/rapor/saatlik`, `GET /api/kasa/aylik`, `GET /api/rapor/detayli?baslangic=&bitis=` *(admin)*
+**Kasa / POS**
+`GET /api/kasa?baslangic=&bitis=` — (v1.7) yanıtta `gelir_nakit`, `gelir_kart`, `pos_satis` kırılımı var; `net = gelir + pos_satis − gider`.
+
+**POS Mutabakat (v1.7, hepsi admin)**
+`GET /api/pos/mutabakat?baslangic=&bitis=` (sistem kart toplamı + Z toplamı + fark + Z kayıtları), `POST /api/pos/z` `{tarih,tutar,aciklama}`, `DELETE /api/pos/z/:id`, `POST /api/pos/satis` `{tutar,aciklama,tarih?}`, `DELETE /api/pos/satis/:id`. CSV türü: `disa-aktar/pos-mutabakat?baslangic=&bitis=` (gün gün: sipariş kartı + siparişsiz + Z + fark).
+
+**Gider / Kârlılık**
+`GET|POST /api/giderler`, `DELETE /api/giderler/:id`, `GET /api/rapor/karlilik`, `GET /api/rapor/musteriler`, `GET /api/rapor/saatlik`, `GET /api/kasa/aylik`, `GET /api/rapor/detayli?baslangic=&bitis=` *(admin)*
 
 **Rapor / Dışa aktarma**
-`GET /api/rapor/gunluk`, `GET /api/rapor/aralik?baslangic=&bitis=`, `GET /api/disa-aktar/:tur` *(admin)* — `tur` ∈ `siparisler|giderler|stok|karlilik|detayli`; **UTF-8 BOM + `;` ayraçlı** CSV (Excel Türkçe uyumlu).
+`GET /api/rapor/gunluk`, `GET /api/rapor/aralik?baslangic=&bitis=`, `GET /api/disa-aktar/:tur` *(admin)* — `tur` ∈ `siparisler|giderler|stok|karlilik|detayli|pos-mutabakat`; **UTF-8 BOM + `;` ayraçlı** CSV (Excel Türkçe uyumlu). `gunluk`/`aralik`/`detayli` yanıtlarında (v1.7) `tahsil_nakit` / `tahsil_kart` / `pos_satis` kırılım alanları da var.
 
 **Yedek / Log / Kullanıcı** *(hepsi admin)*
 `GET /api/yedekler`, `POST /api/yedek/al`, `GET /api/yedek/indir?dosya=`, `POST /api/yedek/yukle`, `GET /api/mesajlar`, `GET /api/loglar`, `GET|POST /api/kullanicilar`, `PUT|DELETE /api/kullanicilar/:id`
@@ -163,12 +172,13 @@ Fırınotomasyon/
 3. **Ödeme UI:** belirsiz toggle yok; net **"💵 Ödeme Alındı"** butonu → sonra **"✅ Ödendi"** rozeti + "geri al" linki. (Fırın kartı, Fırından Çıkanlar ve rapor — üçünde aynı.)
 4. **Kâr hesabı:**
    - **Brüt kâr** = ciro − reçeteden hesaplanan **malzeme maliyeti**.
-   - **Net kâr** = brüt kâr − **diğer giderler**.
+   - **Net kâr** = brüt kâr − **diğer giderler** + **siparişsiz POS satışları** (v1.7).
    - **Stok AÇIKken:** "Malzeme Alımı" kategorisi diğer giderlerden **hariç** (çift sayımı önler).
    - **Stok KAPALIyken:** malzeme maliyeti = **0**; **tüm giderler** net kâra dahil.
 5. **Stok kapalıyken:** `receteDus` (malzeme düşümü) çalışmaz, `kritikStokUyar` gönderilmez, düşük stok listesi boş döner, kârlılıkta maliyet 0 sayılır.
 6. **Yüzdeler** 1 ondalığa yuvarlanır (`Math.round(x*1000)/10`).
 7. **Zaman dilimi:** Raporlar UTC değil **yerel saat** kullanır (`getLocalDateString`) → gece 00:00–03:00 siparişleri kaybolmaz.
+8. **Ödeme tipi (v1.7):** Sipariş "Ödendi" yapılırken **Nakit/Kart** seçilmek zorunda; "geri al" (Bekliyor) tipi boşaltır. Migration'da eski "Ödendi" kayıtları **Nakit** kabul edilir. Mutabakat kıyaslama: her gün için `sistem kart = sipariş kart tahsilatı (cikis_zamani günü) + pos_satis` vs `girilen Z toplamı`; fark = sistem − Z.
 
 ---
 
@@ -183,10 +193,11 @@ Fırınotomasyon/
 ### Öne çıkan fonksiyonlar (`app.js`)
 - **Başlangıç:** `baslangicAkisi`, `girisYap`, `authKontrol`, `oturumGeriYukle`, `gunuBaslat`/`gunuDurdur`
 - **WhatsApp:** `whatsappDurumKontrol`, `startWaPolling` (3 sn'de bir), `whatsappFallback` (kopuksa `api.whatsapp.com` linkini yeni sekmede açar → mesaj kaybolmaz)
-- **Sipariş:** `aktifSiparisleriYukle`, `siparisiTamamla` (adet doğrula → tamamla → mesaj üret → gönder), `odemeAyarla`/`odemeButonu`, `siparisIptal`, `cikanlariYukle`
+- **Sipariş:** `aktifSiparisleriYukle`, `siparisiTamamla` (adet doğrula → tamamla → mesaj üret → gönder), `odemeAyarla(id, yeni, tip)` / `odemeButonu(s)` (v1.7: Nakit/Kart iki buton + tipli rozet), `siparisIptal`, `cikanlariYukle`
 - **Stok:** `stokYukle`/`stokCiz`/`stokEkle`, `stokHareketKaydet`, `stokDuzenleKaydet`, `stokSil`, `hareketleriYukle`, `receteleriYukle`/`receteKaydet`
 - **Stok aç/kapat (v1.6):** `stokAktifMi()`, `stokTakibiniKapat()`, `stokTakibiniAc()`, `stokDurumDegistir(aktif)`
-- **Kasa/Kârlılık:** `kasaYukle`, `kasaGrafikYukle`, `giderEkle`/`giderSil`, `karlilikYukle`, `karlilikHizli`
+- **Kasa/Kârlılık:** `kasaYukle` (v1.7: nakit/kart kırılımı + `posMutabakatYukle` çağrısı), `kasaGrafikYukle`, `giderEkle`/`giderSil`, `karlilikYukle`, `karlilikHizli`
+- **POS mutabakat (v1.7):** `posMutabakatYukle(b, s)`, `posZKaydet`, `posZSil`, `posSatisKaydet`, `posSatisSil` — Kasa sekmesindeki "💳 POS Mutabakatı" kutusunu yönetir (`pos-mutabakat-ozet`, `pos-mutabakat-liste`, `pos-z-*`, `pos-satis-*` id'leri). Admin görür (kasa sekmesi personelde zaten gizli).
 - **Rapor:** `raporuCiz`, `pdfIndir` (gün sonu), `donemAraligi(prefix)`, `detayliPdfIndir(prefix)`, `detayliPdfOlustur()`, `detayliCsvIndir(prefix)`, `csvIndir`
 - **Yedek/Kullanıcı/Log:** `yedekAl`/`yedekIndir`/`yedekYukle`/`yedekleriYukle`, `kullaniciEkle`/`kullaniciSil`, `loglariYukle`, `mesajlariGoster`
 - **Bildirim:** `bildirimDestekleniyor`/`bildirimDurumunuDegistir`/`maasustuBildirim` (yazım hatası: "maasustu")
@@ -262,6 +273,7 @@ $env:WA_DISABLE='1'; $env:PORT='3100'; $env:OPEN_BROWSER='0'; node server.js
 | **v1.4** | Net ödeme butonu ("💵 Ödeme Alındı"), 16 malzeme + 4 gerçekçi reçete otomatik kurulumu, yol haritası dosyası |
 | **v1.5** | Kârlılık & Analiz sekmesi, malzeme alış fiyatı + tedarikçi, fire/zayi, kritik stok WhatsApp uyarısı, mesaj şablonu + mesaj geçmişi + otomatik cevap robotu, aylık grafik, CSV dışa aktarma, yedek geri yükleme, kullanıcı/rol, masaüstü bildirimi, PWA, işlem günlüğü |
 | **v1.6** | **Stok takibi aç/kapat** + **detaylı kâr/zarar raporu (PDF & CSV)** + kârlılık kartları & CSV zenginleştirme |
+| **v1.7** | **POS/kart tahsilat takibi**: Nakit/Kart ödeme tipi seçimi, kasa + raporlarda nakit/kart kırılımı, **POS Mutabakatı** (Z raporu karşılaştırma + siparişsiz kart satışları), `pos_z`/`pos_satis` tabloları, `pos-mutabakat` CSV'i. Klasik banka POS'una yazılım entegrasyonu **mümkün olmadığından** elle kayıt + mutabakat yolu seçildi. |
 
 ---
 
@@ -283,13 +295,16 @@ e17ea28  v1.6: stok aç/kapat + detaylı kâr/zarar raporu
 ```
 Güncel sürümü gönderme komutu: **`git push v2 main`**
 
-**⚠️ Yayınlanmamış değişiklikler (henüz commit edilmedi):**
+**⚠️ Yayınlanmamış değişiklikler (henüz commit edilmedi) — İKİ AYRI SÜRÜM BİRLEŞTİ:**
 ```
+ M server.js
  M public/app.js
  M public/index.html
+ M README.md
+ M PROJE-DURUM.md
 ```
-Bunlar **§8'deki stok aç/kapat iyileştirmesi**dir (Stok sekmesine belirgin kapat butonu, "kapalı" kutusu, her zaman görünen sekme, Ayarlar'da belirgin blok). Commit mesajı önerisi:
-`v1.6.1: stok takibi ac/kapat butonu stok sekmesine tasindi (kolay bulunur)`
+İçerik: (a) **§8'deki stok aç/kapat iyileştirmesi** (v1.6.1 önerisi) + (b) **v1.7 POS/kart tahsilat takibi** (§6-§8'de v1.7 notları). Tertipli git geçmişi isteniyorsa önce stok değişikliği içerir commit, sonra v1.7 commit'i ayrı yapılabilir; hazır tek commit mesajı:
+`v1.7: pos/kart tahsilat takibi (nakit-kart odeme secimi + Z raporu mutabakati) + stok kapat butonu stok sekmesinde`
 
 **`.gitignore` korumaları (public paylaşım için gizli tutuluyor):**
 `.env`, `.wwebjs_auth/`, `.wwebjs_cache/`, `*.db` / `emanet.db`, `yedekler/`, `node_modules/`, `*.docx/*.doc`, `*.log`, `*.pem/*.key/*.cert`. → Repoda **gizli anahtar/oturum/DB yok**.
@@ -301,8 +316,9 @@ Bunlar **§8'deki stok aç/kapat iyileştirmesi**dir (Stok sekmesine belirgin ka
 ## 13) BEKLEYEN İŞLER / YOL HARİTASI
 
 ### Şu an beklemede (ACİL DEĞİL)
-1. §12'deki 2 dosyanın commit + `git push v2 main`.
+1. §12'deki değişikliklerin (stok iyileştirmesi + v1.7 POS takibi) commit + `git push v2 main`.
 2. (Belki) eski `origin` repo güncellensin/arşivlensin.
+3. İlgi alanı (kullanıcı vurgusu): klasik banka POS'una yazılım entegrasyonu mümkün değil; ileride **akıllı/Android POS** veya **sanal POS (iyzico/PayTR, WhatsApp ödeme linki)** istenirse bu yola geçilebilir (internet + sağlayıcı hesabı gerekir).
 
 ### `GELISTIRME-ONERILERI.md`'den ERTELENENLER (kullanıcı isterse sıradaki sürüm)
 - **1.1** Çok ürünlü sipariş (sepet) — *veri modeli hazır: `grup_no`, `notlar` alanları var; arayüz yok.*
@@ -323,6 +339,7 @@ Bunlar **§8'deki stok aç/kapat iyileştirmesi**dir (Stok sekmesine belirgin ka
 ### Geliştirici notu (kullanıcı ne istedi?)
 - 2026-10-17: Kullanıcı "**stok takip kısmını kapatma butonu** koymamışsın ya da bulamadım; sonra diyeceğim özellikleri ekleyeceğiz" dedi.
   → Buton vardı ama gizliydi; **belirgin hale getirildi** (§8). Kullanıcı **yeni özellik listesini verecek** → hazır ol.
+- 2026-10-17: Kullanıcı **POS entegrasyonu** istedi ("POStan alınan ödemeler sisteme girsin, ya da burdan POS'a ödeme aktarılsın"). Seçim: **Nakit/Kart takibi + Z raporu mutabakatı**, cihaz **klasik banka POS'u** (API'si yok → direkt entegrasyon mümkün değil). **v1.7 olarak uygulandı ve test edildi** (bkz. §6-§8). İleride sanal POS/ödeme linki istenirse yukarıdaki 3. maddeye bak.
 
 ---
 

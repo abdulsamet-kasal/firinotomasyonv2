@@ -428,7 +428,8 @@ function detayliRapor(baslangic, bitis) {
       id: s.id, musteri_adi: s.musteri_adi, telefon: s.telefon, urun_turu: s.urun_turu,
       adet: s.adet, birim_fiyat: s.birim_fiyat,
       tutar: yuvarla((s.adet || 0) * (s.birim_fiyat || 0)),
-      odeme_durumu: s.odeme_durumu, cikis_zamani: s.cikis_zamani, giris_zamani: s.giris_zamani
+      odeme_durumu: s.odeme_durumu, odeme_tipi: s.odeme_tipi || '',
+      cikis_zamani: s.cikis_zamani, giris_zamani: s.giris_zamani
     }));
 
   // Özet
@@ -438,7 +439,14 @@ function detayliRapor(baslangic, bitis) {
   const brutKar = yuvarla(ciro - malzemeMaliyeti);
   // Stok takibi açıkken malzeme alımları "maliyet" olarak zaten sayılır; çift saymamak için hariç tutulur.
   const giderDiger = yuvarla(stokVar ? (giderToplam - giderMalzeme) : giderToplam);
-  const netKar = yuvarla(brutKar - giderDiger);
+  // Nakit/Kart kırılımı + siparişsiz POS satışları (maliyetsiz gelir → doğrudan net kâra eklenir)
+  const odemeKirilim = queryOne(`
+    SELECT ${KART_TUTAR_SQL} AS kart, ${NAKIT_TUTAR_SQL} AS nakit
+    FROM siparisler WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?`, aralik);
+  const posSatisRow = queryOne(
+    `SELECT COALESCE(SUM(tutar), 0) AS toplam FROM pos_satis WHERE tarih BETWEEN ? AND ?`, aralik);
+  const posSatis = yuvarla(posSatisRow ? posSatisRow.toplam : 0);
+  const netKar = yuvarla(brutKar - giderDiger + posSatis);
   const siparisSayisi = urunler.reduce((t, u) => t + (u.siparis || 0), 0);
   const toplamAdet = yuvarla(urunler.reduce((t, u) => t + u.adet, 0));
 
@@ -449,6 +457,9 @@ function detayliRapor(baslangic, bitis) {
     ozet: {
       siparis_sayisi: siparisSayisi, toplam_adet: toplamAdet,
       ciro, tahsil, bekleyen: yuvarla(ciro - tahsil),
+      tahsil_nakit: yuvarla(odemeKirilim?.nakit || 0),
+      tahsil_kart: yuvarla(odemeKirilim?.kart || 0),
+      pos_satis: posSatis,
       malzeme_maliyeti: malzemeMaliyeti, brut_kar: brutKar,
       brut_marj: ciro > 0 ? Math.round((brutKar / ciro) * 1000) / 10 : 0,
       gider_toplam: giderToplam, gider_malzeme: giderMalzeme, gider_diger: giderDiger,
@@ -712,6 +723,28 @@ async function initDatabase() {
     )
   `);
 
+  // ── POS / kart tahsilatı takibi
+  // pos_z: gün sonunda POS ekranından okunan Z raporu toplamı (mutabakat girişi)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS pos_z (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tarih DATE DEFAULT (date('now', 'localtime')),
+      tutar REAL NOT NULL,
+      aciklama TEXT,
+      created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
+  // pos_satis: siparişle alakasız POS'tan yapılan satışlar (pide üstü, ayran vb.) — kasaya gelir yazılır
+  db.run(`
+    CREATE TABLE IF NOT EXISTS pos_satis (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tarih DATE DEFAULT (date('now', 'localtime')),
+      tutar REAL NOT NULL,
+      aciklama TEXT,
+      created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
+
   // Eski veritabanları için migration: odeme_durumu kolonu
   const kolonlar = queryAll('PRAGMA table_info(siparisler)');
   if (!kolonlar.some((k) => k.name === 'odeme_durumu')) {
@@ -739,6 +772,11 @@ async function initDatabase() {
   }
   if (!kolonlar.some((k) => k.name === 'notlar')) {
     db.run(`ALTER TABLE siparisler ADD COLUMN notlar TEXT`);
+  }
+  // ── Migration (v1.6.2): ödeme tipi (Nakit / Kart)
+  if (!kolonlar.some((k) => k.name === 'odeme_tipi')) {
+    db.run(`ALTER TABLE siparisler ADD COLUMN odeme_tipi TEXT DEFAULT ''`);
+    console.log('  🔧 Veritabanı güncellendi: odeme_tipi kolonu eklendi.');
   }
 
   // ── v1.5 tabloları
@@ -1262,7 +1300,7 @@ app.put('/api/siparis/:id/tamamla', (req, res) => {
   }
 });
 
-// 4) Ödeme durumunu değiştir (Bekliyor / Ödendi)
+// 4) Ödeme durumunu değiştir (Bekliyor / Ödendi) — ödeme tipi de ( Nakit / Kart ) beraberinde gelebilir
 app.put('/api/siparis/:id/odeme', (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -1276,7 +1314,16 @@ app.put('/api/siparis/:id/odeme', (req, res) => {
     const siparis = queryOne('SELECT * FROM siparisler WHERE id = ?', [id]);
     if (!siparis) return res.status(404).json({ error: 'Sipariş bulunamadı.' });
 
-    runSql('UPDATE siparisler SET odeme_durumu = ? WHERE id = ?', [odeme, id]);
+    // Ödeme tipi: ödeme alındıysa Nakit/Kart seçilmeli; geri alınırken tip temizlenir
+    const gonderenTip = ((req.body || {}).odeme_tipi || '').trim();
+    let tip = '';
+    if (odeme === 'Ödendi') {
+      tip = ['Nakit', 'Kart'].includes(gonderenTip) ? gonderenTip : '';
+      if (!tip) return res.status(400).json({ error: 'Ödeme tipi seçiniz (Nakit / Kart).' });
+    }
+    runSql('UPDATE siparisler SET odeme_durumu = ?, odeme_tipi = ? WHERE id = ?', [odeme, tip, id]);
+    islemKaydet(kullaniciAdi(req), 'odeme-guncelle',
+      `#${id} ${odeme}${tip ? ' (' + tip + ')' : ''}`);
     res.json({ success: true, siparis: queryOne('SELECT * FROM siparisler WHERE id = ?', [id]) });
   } catch (err) {
     console.error('Ödeme güncelleme hatası:', err);
@@ -1741,11 +1788,20 @@ app.get('/api/kasa', rolGerekli('admin'), (req, res) => {
       FROM siparisler WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?`, [baslangic, bitis]);
     const giderRow = queryOne(`SELECT COALESCE(SUM(miktar), 0) as gider FROM giderler WHERE tarih BETWEEN ? AND ?`, [baslangic, bitis]);
     const gider = giderRow ? giderRow.gider : 0;
+    const kirilim = queryOne(`
+      SELECT ${KART_TUTAR_SQL} as kart, ${NAKIT_TUTAR_SQL} as nakit
+      FROM siparisler WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?`, [baslangic, bitis]);
+    const posSatisRow = queryOne(`SELECT COALESCE(SUM(tutar), 0) as toplam FROM pos_satis WHERE tarih BETWEEN ? AND ?`, [baslangic, bitis]);
+    const posSatis = yuvarla(posSatisRow ? posSatisRow.toplam : 0);
+    // pos_satis: siparişsiz POS satışları — gelir olarak net kâra eklenir
     res.json({
       baslangic, bitis,
       gelir: ciro.gelir, bekleyen: ciro.bekleyen, ciro: ciro.ciro,
+      gelir_nakit: yuvarla(kirilim?.nakit || 0),
+      gelir_kart: yuvarla(kirilim?.kart || 0),
+      pos_satis: posSatis,
       siparis_sayisi: ciro.siparis_sayisi, toplam_adet: ciro.toplam_adet,
-      gider, net: (ciro.gelir || 0) - (gider || 0)
+      gider, net: (ciro.gelir || 0) + posSatis - (gider || 0)
     });
   } catch (err) {
     console.error('Kasa hatası:', err);
@@ -1754,6 +1810,113 @@ app.get('/api/kasa', rolGerekli('admin'), (req, res) => {
 });
 
 // ─── EK RAPORLAR (kârlılık / müşteri / saatlik / aylık kasa) ────────
+// ─── POS / KART TAHSLAT TAKİBİ ──────────────────────────────────────
+
+// Ödeme tipi kırılımı için ortak SQL parçaları (Nakit / Kart)
+const KART_TUTAR_SQL = `COALESCE(SUM(CASE WHEN odeme_durumu = 'Ödendi' AND odeme_tipi = 'Kart' THEN adet * COALESCE(birim_fiyat, 0) ELSE 0 END), 0)`;
+const NAKIT_TUTAR_SQL = `COALESCE(SUM(CASE WHEN odeme_durumu = 'Ödendi' AND odeme_tipi = 'Nakit' THEN adet * COALESCE(birim_fiyat, 0) ELSE 0 END), 0)`;
+
+// POS mutabakatı: gün sonunda POS ekranındaki (Z raporu) kart toplamı girilir; sistem
+// kendi kart tahsilatı + siparişsiz POS satışları ile karşılaştırır, farkı gösterir.
+app.get('/api/pos/mutabakat', rolGerekli('admin'), (req, res) => {
+  try {
+    const { baslangic, bitis } = tarihAraligi(req.query);
+    const kRow = queryOne(`
+      SELECT ${KART_TUTAR_SQL} AS kart, ${NAKIT_TUTAR_SQL} AS nakit
+      FROM siparisler WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?`,
+      [baslangic, bitis]);
+    const kartSiparissiz = queryOne(
+      `SELECT COALESCE(SUM(tutar), 0) AS toplam FROM pos_satis WHERE tarih BETWEEN ? AND ?`,
+      [baslangic, bitis]);
+    const zKayit = queryAll(
+      `SELECT id, tarih, tutar, aciklama FROM pos_z WHERE tarih BETWEEN ? AND ? ORDER BY tarih, id`,
+      [baslangic, bitis]);
+    const zToplam = yuvarla(zKayit.reduce((t, z) => t + (z.tutar || 0), 0));
+    const sistemKart = yuvarla((kRow?.kart || 0) + (kartSiparissiz?.toplam || 0));
+    res.json({
+      baslangic, bitis,
+      sistem_kart: sistemKart,
+      sistem_kart_siparis: yuvarla(kRow?.kart || 0),       // siparişlerden kart tahsilatı
+      sistem_kart_siparissiz: yuvarla(kartSiparissiz?.toplam || 0), // siparişsiz POS satışları
+      sistem_nakit: yuvarla(kRow?.nakit || 0),
+      pos_z: zToplam,
+      z_kayitlari: zKayit,
+      fark: yuvarla(sistemKart - zToplam)
+    });
+  } catch (err) {
+    console.error('POS mutabakat hatası:', err);
+    res.status(500).json({ error: 'POS mutabakatı hesaplanamadı.' });
+  }
+});
+
+// Z raporu tutarı gir (mutabakat için)
+app.post('/api/pos/z', rolGerekli('admin'), (req, res) => {
+  try {
+    const tutar = parseFloat((req.body || {}).tutar);
+    const aciklama = ((req.body || {}).aciklama || '').trim().slice(0, 120);
+    const tarih = ((req.body || {}).tarih || getLocalDateString());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) {
+      return res.status(400).json({ error: 'Geçerli tarih giriniz (YYYY-AA-GG).' });
+    }
+    if (!Number.isFinite(tutar) || tutar <= 0) {
+      return res.status(400).json({ error: 'Geçerli bir Z tutarı giriniz.' });
+    }
+    runSql('INSERT INTO pos_z (tarih, tutar, aciklama) VALUES (?, ?, ?)', [tarih, tutar, aciklama]);
+    islemKaydet(kullaniciAdi(req), 'pos-z-gir', `${tarih}: ${yuvarla(tutar)} ₺`);
+    res.json({ success: true, message: 'Z raporu tutarı kaydedildi.' });
+  } catch (err) {
+    console.error('POS Z kayıt hatası:', err);
+    res.status(500).json({ error: 'Z raporu kaydedilemedi.' });
+  }
+});
+
+app.delete('/api/pos/z/:id', rolGerekli('admin'), (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Geçersiz kayıt.' });
+    runSql('DELETE FROM pos_z WHERE id = ?', [id]);
+    islemKaydet(kullaniciAdi(req), 'pos-z-sil', `#${id}`);
+    res.json({ success: true, message: 'Z kaydı silindi.' });
+  } catch (err) {
+    console.error('POS Z silme hatası:', err);
+    res.status(500).json({ error: 'Z kaydı silinemedi.' });
+  }
+});
+
+// Siparişsiz POS satışı (pide üstü, ayran vb.) — kayıtlar mutabakata ve kasa kart toplamına dahil edilir
+app.post('/api/pos/satis', rolGerekli('admin'), (req, res) => {
+  try {
+    const tutar = parseFloat((req.body || {}).tutar);
+    const aciklama = ((req.body || {}).aciklama || '').trim().slice(0, 120);
+    const tarih = ((req.body || {}).tarih || getLocalDateString());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) {
+      return res.status(400).json({ error: 'Geçerli tarih giriniz (YYYY-AA-GG).' });
+    }
+    if (!Number.isFinite(tutar) || tutar <= 0) {
+      return res.status(400).json({ error: 'Geçerli bir tutar giriniz.' });
+    }
+    runSql('INSERT INTO pos_satis (tarih, tutar, aciklama) VALUES (?, ?, ?)', [tarih, tutar, aciklama || 'POS satışı']);
+    islemKaydet(kullaniciAdi(req), 'pos-satis-ekle', `${tarih}: ${yuvarla(tutar)} ₺`);
+    res.json({ success: true, message: 'POS satışı kaydedildi.' });
+  } catch (err) {
+    console.error('POS satış kayıt hatası:', err);
+    res.status(500).json({ error: 'POS satışı kaydedilemedi.' });
+  }
+});
+
+app.delete('/api/pos/satis/:id', rolGerekli('admin'), (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Geçersiz kayıt.' });
+    runSql('DELETE FROM pos_satis WHERE id = ?', [id]);
+    islemKaydet(kullaniciAdi(req), 'pos-satis-sil', `#${id}`);
+    res.json({ success: true, message: 'POS satışı silindi.' });
+  } catch (err) {
+    console.error('POS satış silme hatası:', err);
+    res.status(500).json({ error: 'POS satışı silinemedi.' });
+  }
+});
+
 app.get('/api/rapor/karlilik', rolGerekli('admin'), (req, res) => {
   try {
     const { baslangic, bitis } = tarihAraligi(req.query);
@@ -1883,10 +2046,10 @@ app.get('/api/disa-aktar/:tur', rolGerekli('admin'), (req, res) => {
     const tur = req.params.tur;
     let basliklar, satirlar, ad;
     if (tur === 'siparisler') {
-      basliklar = ['id', 'musteri_adi', 'telefon', 'urun_turu', 'adet', 'birim_fiyat', 'tutar', 'durum', 'odeme_durumu', 'giris_zamani', 'cikis_zamani'];
+      basliklar = ['id', 'musteri_adi', 'telefon', 'urun_turu', 'adet', 'birim_fiyat', 'tutar', 'durum', 'odeme_durumu', 'odeme_tipi', 'giris_zamani', 'cikis_zamani'];
       satirlar = queryAll('SELECT * FROM siparisler ORDER BY id DESC LIMIT 5000')
         .map((r) => [r.id, r.musteri_adi, r.telefon, r.urun_turu, r.adet, r.birim_fiyat,
-          yuvarla((r.adet || 0) * (r.birim_fiyat || 0)), r.durum, r.odeme_durumu, r.giris_zamani, r.cikis_zamani]);
+          yuvarla((r.adet || 0) * (r.birim_fiyat || 0)), r.durum, r.odeme_durumu, r.odeme_tipi || '', r.giris_zamani, r.cikis_zamani]);
       ad = 'siparisler';
     } else if (tur === 'giderler') {
       basliklar = ['id', 'tarih', 'kategori', 'aciklama', 'miktar'];
@@ -1911,6 +2074,7 @@ app.get('/api/disa-aktar/:tur', rolGerekli('admin'), (req, res) => {
       parcalar.push('');
       parcalar.push(satir('Sipariş Sayısı', o.siparis_sayisi, 'Toplam Adet', o.toplam_adet));
       parcalar.push(satir('Ciro', o.ciro, 'Tahsil Edilen', o.tahsil, 'Bekleyen', o.bekleyen));
+      parcalar.push(satir('Tahsil - Nakit', o.tahsil_nakit, 'Tahsil - Kart', o.tahsil_kart, 'POS Satışı (Siparişsiz)', o.pos_satis));
       parcalar.push(satir('Malzeme Maliyeti', o.malzeme_maliyeti, 'Brüt Kâr', o.brut_kar, 'Brüt Marj %', o.brut_marj));
       parcalar.push(satir('Diğer Giderler', o.gider_diger, 'Toplam Gider', o.gider_toplam));
       parcalar.push(satir('NET KÂR / ZARAR', o.net_kar, 'Net Marj %', o.net_marj));
@@ -1940,6 +2104,9 @@ app.get('/api/disa-aktar/:tur', rolGerekli('admin'), (req, res) => {
       parcalar.push(satir('Toplam Adet', o.toplam_adet));
       parcalar.push(satir('Ciro (Satış)', o.ciro));
       parcalar.push(satir('Tahsil Edilen', o.tahsil));
+      parcalar.push(satir('Tahsil - Nakit', o.tahsil_nakit));
+      parcalar.push(satir('Tahsil - Kart', o.tahsil_kart));
+      parcalar.push(satir('POS Satışı (Siparişsiz)', o.pos_satis));
       parcalar.push(satir('Bekleyen Ödeme', o.bekleyen));
       parcalar.push(satir('Malzeme Maliyeti', o.malzeme_maliyeti));
       parcalar.push(satir('Brüt Kâr', o.brut_kar));
@@ -1966,12 +2133,42 @@ app.get('/api/disa-aktar/:tur', rolGerekli('admin'), (req, res) => {
       parcalar.push(satir('Saat', 'Sipariş', 'Adet'));
       r.saatlik.filter((s) => s.siparis > 0).forEach((s) => parcalar.push(satir(s.saat + ':00', s.siparis, s.adet)));
       parcalar.push(bolum('TESLİM EDİLEN SİPARİŞLER'));
-      parcalar.push(satir('id', 'Müşteri', 'Telefon', 'Ürün', 'Adet', 'Birim Fiyat', 'Tutar', 'Ödeme', 'Çıkış'));
-      r.tamamlananlar.forEach((s) => parcalar.push(satir(s.id, s.musteri_adi, s.telefon, s.urun_turu, s.adet, s.birim_fiyat, s.tutar, s.odeme_durumu, s.cikis_zamani)));
+      parcalar.push(satir('id', 'Müşteri', 'Telefon', 'Ürün', 'Adet', 'Birim Fiyat', 'Tutar', 'Ödeme', 'Tip', 'Çıkış'));
+      r.tamamlananlar.forEach((s) => parcalar.push(satir(s.id, s.musteri_adi, s.telefon, s.urun_turu, s.adet, s.birim_fiyat, s.tutar, s.odeme_durumu, s.odeme_tipi, s.cikis_zamani)));
       const csvDetay = '\uFEFF' + parcalar.join('\r\n');
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="detayli-rapor-${baslangic}_${bitis}.csv"`);
       return res.send(csvDetay);
+    } else if (tur === 'pos-mutabakat') {
+      // POS mutabakat dökümü: sistem kart tahsilatı vs girilen Z raporu tutarları
+      const { baslangic, bitis } = tarihAraligi(req.query);
+      const satir = (...h) => h.map(csvHucre).join(';');
+      const parcalar = [];
+      parcalar.push(satir('POS MUTABAKAT RAPORU'));
+      parcalar.push(satir(`Dönem: ${baslangic} → ${bitis}`));
+      parcalar.push('');
+      parcalar.push(satir('Tarih', 'Sipariş Kart Tahsilatı', 'Siparişsiz POS Satışı', 'Sistem Kart Toplamı', 'POS Z Raporu', 'Fark'));
+      // Gün gün hesapla (mutabakat endpoint'indeki mantığın aynısı)
+      const gunler = new Set([
+        ...queryAll(`SELECT DISTINCT date(cikis_zamani) AS g FROM siparisler WHERE durum='Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?`, [baslangic, bitis]).map((r) => r.g),
+        ...queryAll(`SELECT DISTINCT tarih AS g FROM pos_satis WHERE tarih BETWEEN ? AND ?`, [baslangic, bitis]).map((r) => r.g),
+        ...queryAll(`SELECT DISTINCT tarih AS g FROM pos_z WHERE tarih BETWEEN ? AND ?`, [baslangic, bitis]).map((r) => r.g)
+      ].filter(Boolean));
+      [...gunler].sort().forEach((gun) => {
+        const siparisKart = yuvarla(queryOne(`
+          SELECT ${KART_TUTAR_SQL} AS t FROM siparisler
+          WHERE durum = 'Tamamlandı' AND date(cikis_zamani) = ?`, [gun])?.t || 0);
+        const siparissiz = yuvarla(queryOne(
+          `SELECT COALESCE(SUM(tutar),0) AS t FROM pos_satis WHERE tarih = ?`, [gun])?.t || 0);
+        const z = yuvarla(queryOne(
+          `SELECT COALESCE(SUM(tutar),0) AS t FROM pos_z WHERE tarih = ?`, [gun])?.t || 0);
+        const sistem = yuvarla(siparisKart + siparissiz);
+        parcalar.push(satir(gun, siparisKart, siparissiz, sistem, z, yuvarla(sistem - z)));
+      });
+      const csvPos = '\uFEFF' + parcalar.join('\r\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="pos-mutabakat-${baslangic}_${bitis}.csv"`);
+      return res.send(csvPos);
     } else {
       return res.status(400).json({ error: 'Geçersiz dışa aktarma türü.' });
     }
