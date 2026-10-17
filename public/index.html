@@ -509,18 +509,44 @@
 
     <!-- ═══ STOK TAB ═══ -->
     <div id="panel-stok" class="hidden">
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 bg-sky-500/10 rounded-xl flex items-center justify-center text-xl">📦</div>
           <div>
             <h2 class="text-xl font-bold text-gray-100">Stok Takip</h2>
-            <p class="text-dark-400 text-sm">Malzemeler, reçeteler ve kritik seviye uyarıları</p>
+            <p id="stok-alt-baslik" class="text-dark-400 text-sm">Malzemeler, reçeteler ve kritik seviye uyarıları</p>
           </div>
         </div>
-        <button onclick="stokYukle()" class="text-dark-400 hover:text-fire-400 transition-colors p-2 rounded-lg hover:bg-dark-800" title="Yenile">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        </button>
+        <div class="flex items-center gap-2">
+          <button id="btn-stok-kapat" onclick="stokTakibiniKapat()"
+            class="btn-press px-3 py-2 bg-dark-800 hover:bg-red-600/20 border border-dark-700/50 hover:border-red-500/40 text-dark-300 hover:text-red-300 text-xs font-semibold rounded-xl transition-all"
+            title="Stok takibini kapat (kayıtlarınız silinmez)">⏸️ Stok takibini kapat</button>
+          <button onclick="stokYukle()" class="text-dark-400 hover:text-fire-400 transition-colors p-2 rounded-lg hover:bg-dark-800" title="Yenile">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
       </div>
+
+      <!-- Stok takibi KAPALI iken gösterilir -->
+      <div id="stok-kapali" class="hidden">
+        <div class="bg-dark-900/80 rounded-2xl border border-amber-500/30 p-8 text-center max-w-2xl mx-auto">
+          <div class="text-5xl mb-4">📦</div>
+          <h3 class="text-xl font-bold text-gray-100 mb-2">Stok takibi kapalı</h3>
+          <p class="text-dark-400 text-sm mb-1">Şu an stok/reçete modülü devre dışı. Bu durumda:</p>
+          <ul class="text-dark-400 text-sm text-left inline-block mb-6 space-y-1">
+            <li>• Sipariş tamamlanınca <b class="text-gray-300">malzeme düşümü yapılmaz</b></li>
+            <li>• <b class="text-gray-300">Kritik stok WhatsApp uyarısı</b> gönderilmez</li>
+            <li>• Kârlılık raporunda maliyet <b class="text-gray-300">0</b> kabul edilir</li>
+          </ul>
+          <p class="text-dark-500 text-xs mb-6">Mevcut stok, reçete ve hareket kayıtlarınız <b>silinmez</b>; tekrar açtığınızda kaldığınız yerden devam eder.</p>
+          <button id="btn-stok-ac" onclick="stokTakibiniAc()"
+            class="btn-press px-6 py-3 bg-gradient-to-r from-fire-600 to-fire-700 hover:from-fire-500 hover:to-fire-600 text-white font-bold rounded-xl shadow-lg shadow-fire-600/25 transition-all">
+            ▶️ Stok Takibini Aç
+          </button>
+        </div>
+      </div>
+
+      <div id="stok-icerik">
 
       <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-5 mb-6">
         <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2">➕ Yeni Malzeme Ekle</h3>
@@ -554,6 +580,7 @@
           <div id="stok-hareket-list" class="space-y-2 max-h-96 overflow-y-auto pr-2"></div>
         </div>
       </div>
+      </div><!-- /stok-icerik -->
     </div>
 
     <!-- ═══ KASA TAB ═══ -->
@@ -763,6 +790,16 @@
           <p class="text-dark-500 text-xs mt-1">Her ürünün birim fiyatını (hamur + işçilik) aşağıdaki satırlardan ayrı ayrı ayarlayın. Sipariş, tamamlandığı andaki fiyatla hesaplanır ve raporlara öyle işlenir.</p>
         </div>
 
+        <div class="bg-sky-500/5 border border-sky-500/20 rounded-xl p-3.5">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input id="ayar-stok-aktif" type="checkbox" class="w-5 h-5 mt-0.5 accent-fire-500 flex-shrink-0" />
+            <span>
+              <span class="block text-dark-200 text-sm font-semibold">📦 Stok takibi aktif</span>
+              <span class="block text-dark-500 text-xs mt-0.5">Kapatırsanız Stok/Reçete modülü gizlenir; sipariş tamamlanırken malzeme düşümü ve kritik stok uyarısı yapılmaz, kârlılıkta maliyet 0 kabul edilir. Mevcut kayıtlarınız silinmez.</span>
+            </span>
+          </label>
+        </div>
+
         <div>
           <div class="flex items-center justify-between mb-2">
             <label class="text-sm font-semibold text-dark-300">Ürünler</label>
@@ -797,9 +834,6 @@
                   class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
               </div>
               <div class="flex flex-col justify-end gap-2">
-                <label class="flex items-center gap-2 cursor-pointer text-sm text-dark-300" title="Kapatırsanız Stok ve Reçete sekmeleri gizlenir; sipariş tamamlanırken malzeme düşümü yapılmaz.">
-                  <input id="ayar-stok-aktif" type="checkbox" class="w-4 h-4 accent-fire-500" /> Stok takibi
-                </label>
                 <label class="flex items-center gap-2 cursor-pointer text-sm text-dark-300">
                   <input id="ayar-kritik-uyari" type="checkbox" class="w-4 h-4 accent-fire-500" /> Kritik stok uyarısı
                 </label>
@@ -808,7 +842,6 @@
                 </label>
               </div>
             </div>
-            <p class="text-dark-500 text-xs">Stok takibini kapatırsanız reçete, malzeme maliyeti ve kritik stok uyarıları devre dışı kalır; kârlılık raporlarında yalnızca ciro ve giderler görünür.</p>
           </div>
         </div>
 

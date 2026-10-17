@@ -63,18 +63,22 @@ function uygulaRol() {
     if (el) el.classList.toggle('hidden', !adminMi);
   });
 
-  // Stok takibi kapalıysa stok sekmesini ve ilgili öğeleri gizle
+  // Stok takibi durumu: içerik mi, "kapalı" bilgisi mi görünsün
   const stokVar = stokAktifMi();
-  const tabStok = document.getElementById('tab-stok');
-  if (tabStok) tabStok.classList.toggle('hidden', !stokVar);
-  const stokCsvBtn = document.getElementById('btn-stok-csv');
-  if (stokCsvBtn) stokCsvBtn.classList.toggle('hidden', !stokVar);
-  const stokKapaliNot = document.getElementById('kar-uyari-stok-kapali');
-  if (stokKapaliNot) stokKapaliNot.classList.toggle('hidden', stokVar);
+  const goster = (id, kosul) => { const el = document.getElementById(id); if (el) el.classList.toggle('hidden', !kosul); };
+  goster('stok-icerik', stokVar);
+  goster('stok-kapali', !stokVar);
+  goster('btn-stok-kapat', stokVar && adminMi);
+  goster('btn-stok-ac', !stokVar && adminMi);
+  goster('btn-stok-csv', stokVar);
+  goster('kar-uyari-stok-kapali', !stokVar);
+  const altBaslik = document.getElementById('stok-alt-baslik');
+  if (altBaslik) altBaslik.textContent = stokVar
+    ? 'Malzemeler, reçeteler ve kritik seviye uyarıları'
+    : 'Stok takibi kapalı — istediğin zaman açabilirsin';
 
   const aktif = document.querySelector('main > div:not(.hidden)');
   if (!adminMi && aktif && ['panel-kasa', 'panel-karlilik'].includes(aktif.id)) switchTab('main');
-  if (!stokVar && aktif && aktif.id === 'panel-stok') switchTab('main');
 }
 
 async function girisYap() {
@@ -606,7 +610,6 @@ updateClock();
 
 // ─── TAB SİSTEMİ ────────────────────────────────────────────────────
 function switchTab(tab) {
-  if (tab === 'stok' && !stokAktifMi()) return;
   ['main', 'report', 'stok', 'kasa', 'karlilik'].forEach(t => {
     const panel = document.getElementById(`panel-${t}`);
     const btn = document.getElementById(`tab-${t}`);
@@ -622,7 +625,7 @@ function switchTab(tab) {
     }
   });
   if (tab === 'report') raporYukle(raporModu);
-  if (tab === 'stok') { stokYukle(); hareketleriYukle(); receteleriYukle(); }
+  if (tab === 'stok' && stokAktifMi()) { stokYukle(); hareketleriYukle(); receteleriYukle(); }
   if (tab === 'kasa') kasaYukle();
   if (tab === 'karlilik') karlilikYukle();
 }
@@ -1856,6 +1859,38 @@ function karlilikHizli(tip) {
   if (tip === 'bugun') { bEl.value = t; sEl.value = t; }
   else { bEl.value = t.slice(0, 8) + '01'; sEl.value = t; }
   karlilikYukle();
+}
+
+// ─── STOK TAKİBİ AÇ / KAPAT ─────────────────────────────────────────
+function stokTakibiniKapat() {
+  if (!confirm('Stok takibini kapatmak istediğine emin misin?\n\n• Siparişte malzeme düşümü durur\n• Kritik stok uyarıları gönderilmez\n• Kârlılıkta maliyet 0 kabul edilir\n\nMevcut stok/reçete kayıtların SİLİNMEZ; istediğin zaman tekrar açabilirsin.')) return;
+  stokDurumDegistir(false);
+}
+
+function stokTakibiniAc() {
+  stokDurumDegistir(true);
+}
+
+async function stokDurumDegistir(aktif) {
+  try {
+    const res = await apiFetch(`${API_BASE}/api/ayarlar`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stok_aktif: aktif })
+    });
+    const data = await res.json();
+    if (!data.success) { showToast(data.error || 'İşlem başarısız!', 'error'); return; }
+    AYARLAR = data;
+    uygulaRol();
+    if (aktif) {
+      showToast('Stok takibi AÇILDI. ✅', 'success');
+      stokYukle(); hareketleriYukle(); receteleriYukle();
+    } else {
+      showToast('Stok takibi kapatıldı. İstediğin zaman "Stok" sekmesinden tekrar açabilirsin.', 'info');
+    }
+  } catch (err) {
+    if (err.message !== 'UNAUTHORIZED') showToast('Sunucu bağlantı hatası!', 'error');
+  }
 }
 
 // ─── CSV / DIŞA AKTARMA ─────────────────────────────────────────────

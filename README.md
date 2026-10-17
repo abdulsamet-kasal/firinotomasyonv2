@@ -25,7 +25,8 @@ Fırınotomasyon/
 ├── baslat.bat                    # Tek tıkla sistemi ve tarayıcıyı başlatan betik
 ├── kurulum.bat                   # Yeni bilgisayarda ortamı hazırlayan kurulum betiği
 ├── README.md                     # Projenin kapsamlı dokümantasyonu (Bu dosya)
-└── GELISTIRME-ONERILERI.md       # Sisteme eklenebilecek yeni özellikler (yol haritası)
+├── GELISTIRME-ONERILERI.md       # Sisteme eklenebilecek yeni özellikler (yol haritası)
+└── PROJE-DURUM.md                # 🧠 Proje hafızası / geliştirici devir notu (teknik durum, API, şema, yapılacaklar)
 ```
 
 ---
