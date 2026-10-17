@@ -19,7 +19,7 @@
 - **Kâr kuralı:** brüt kâr = ciro − reçete malzeme maliyeti; net kâr = brüt kâr − diğer giderler **+ siparişsiz POS satışları** (stok açıkken "Malzeme Alımı" gideri çift sayılmasın diye hariç).
 - **Stok aç/kapat:** `stok_aktif` ayarı. **2026-10-17'de kullanıcı "butonu bulamıyorum" dediği için** belirgin hale getirildi (bkz. §8).
 - **POS entegrasyonu (v1.7):** Ödemeler **Nakit/Kart** tipiyle işaretlenir; Kasa'da gün sonu **Z raporu mutabakatı** var (bkz. §7-§8'de v1.7 notları). Kullanıcının klasik banka POS'u var — makineye yazılım-entegrasyonu yapılması **mümkün değil**, bu yüzden elle kayıt + mutabakat yolu seçildi.
-- **⚠️ Yayınlanmamış değişiklik var:** `server.js`, `public/app.js`, `public/index.html` git'te "modified", henüz commit edilmedi (bkz. §12).
+- **⚠️ Git durumu:** `server.js`, `public/app.js`, `public/index.html`, `README.md`, `PROJE-DURUM.md` **commit edilip `v2`'ye pushlandı** (`99c4c12` — v1.7 + stok kapat butonu, 2026-10-17). Çalışma ağacı temiz.
 
 ---
 
@@ -291,20 +291,11 @@ $env:WA_DISABLE='1'; $env:PORT='3100'; $env:OPEN_BROWSER='0'; node server.js
 ```
 f74518f  İlk commit (v1.0)
 86da8de  v1.5
-e17ea28  v1.6: stok aç/kapat + detaylı kâr/zarar raporu
+e17ea28  v1.6: stok takibi aç/kapat + detaylı kâr/zarar raporu
+0c2234b  v1.6.1: stok aç/kapat butonu stok sekmesine taşındı + PROJE-DURUM.md eklendi
+99c4c12  v1.7: pos/kart tahsilat takibi (+ commit mesajında hataen stok butonundan da söz edilir — asıl işi v1.7'dir)
 ```
-Güncel sürümü gönderme komutu: **`git push v2 main`**
-
-**⚠️ Yayınlanmamış değişiklikler (henüz commit edilmedi) — İKİ AYRI SÜRÜM BİRLEŞTİ:**
-```
- M server.js
- M public/app.js
- M public/index.html
- M README.md
- M PROJE-DURUM.md
-```
-İçerik: (a) **§8'deki stok aç/kapat iyileştirmesi** (v1.6.1 önerisi) + (b) **v1.7 POS/kart tahsilat takibi** (§6-§8'de v1.7 notları). Tertipli git geçmişi isteniyorsa önce stok değişikliği içerir commit, sonra v1.7 commit'i ayrı yapılabilir; hazır tek commit mesajı:
-`v1.7: pos/kart tahsilat takibi (nakit-kart odeme secimi + Z raporu mutabakati) + stok kapat butonu stok sekmesinde`
+Güncel sürümü gönderme komutu: **`git push v2 main`** → **2026-10-17'de gönderildi (99c4c12).** Çalışma ağacı temiz, yayımlanmamış değişiklik yok.
 
 **`.gitignore` korumaları (public paylaşım için gizli tutuluyor):**
 `.env`, `.wwebjs_auth/`, `.wwebjs_cache/`, `*.db` / `emanet.db`, `yedekler/`, `node_modules/`, `*.docx/*.doc`, `*.log`, `*.pem/*.key/*.cert`. → Repoda **gizli anahtar/oturum/DB yok**.
@@ -316,7 +307,7 @@ Güncel sürümü gönderme komutu: **`git push v2 main`**
 ## 13) BEKLEYEN İŞLER / YOL HARİTASI
 
 ### Şu an beklemede (ACİL DEĞİL)
-1. §12'deki değişikliklerin (stok iyileştirmesi + v1.7 POS takibi) commit + `git push v2 main`.
+1. ~~§12'deki değişikliklerin commit + push'u~~ → **Tamamlandı (99c4c12, 2026-10-17).**
 2. (Belki) eski `origin` repo güncellensin/arşivlensin.
 3. İlgi alanı (kullanıcı vurgusu): klasik banka POS'una yazılım entegrasyonu mümkün değil; ileride **akıllı/Android POS** veya **sanal POS (iyzico/PayTR, WhatsApp ödeme linki)** istenirse bu yola geçilebilir (internet + sağlayıcı hesabı gerekir).
 
