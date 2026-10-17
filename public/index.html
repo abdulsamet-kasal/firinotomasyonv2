@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>🔥 Emanet Lahmacun & Pide Takip Sistemi</title>
   <meta name="description" content="Fırın sipariş takip ve WhatsApp bildirim sistemi" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#1a1a1a" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔥</text></svg>" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -97,6 +100,27 @@
   <!-- Toast Container -->
   <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-3"></div>
 
+  <!-- ═══ GİRİŞ EKRANI (Şifre koruması aktifse görünür) ═══ -->
+  <div id="login-overlay" class="hidden fixed inset-0 z-[60] bg-dark-950/98 backdrop-blur-xl flex items-center justify-center overlay-enter">
+    <div class="text-center max-w-sm w-full mx-auto px-6 scale-in">
+      <div class="text-6xl mb-4">🔒</div>
+      <h2 class="text-2xl font-black bg-gradient-to-r from-fire-400 to-fire-600 bg-clip-text text-transparent mb-1">Giriş Yap</h2>
+      <p id="login-aciklama" class="text-dark-400 text-sm mb-6">Bu sistem şifre ile korunuyor.</p>
+      <input type="text" id="login-kullanici" placeholder="Kullanıcı adı" autocomplete="username"
+        class="hidden w-full px-4 py-3.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 text-lg text-center
+               placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-fire-500/50 focus:border-fire-500/50 transition-all mb-3" />
+      <input type="password" id="login-sifre" placeholder="Şifre"
+        class="w-full px-4 py-3.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 text-lg text-center
+               placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-fire-500/50 focus:border-fire-500/50 transition-all mb-3" />
+      <button onclick="girisYap()"
+        class="btn-press w-full py-3.5 bg-gradient-to-r from-fire-600 to-fire-700 hover:from-fire-500 hover:to-fire-600
+               text-white text-lg font-bold rounded-xl shadow-lg shadow-fire-600/25 transition-all">
+        GİRİŞ
+      </button>
+      <p id="login-hata" class="hidden text-red-400 text-sm mt-3"></p>
+    </div>
+  </div>
+
   <!-- ═══ BAŞLANGIÇ OVERLAY ═══ -->
   <div id="start-overlay" class="fixed inset-0 z-50 bg-dark-950/98 backdrop-blur-xl flex items-center justify-center overlay-enter">
     <div class="text-center scale-in max-w-lg mx-auto px-6">
@@ -171,7 +195,7 @@
       <p id="wa-baslat-uyari" class="hidden text-amber-400/80 text-xs mt-3">⚠️ WhatsApp bağlı değil. Sistem çalışır ama mesajlar manuel gönderilir.</p>
 
       <div class="mt-6 text-dark-600 text-sm">
-        Birim Fiyat: <span class="text-fire-400 font-bold">15 ₺</span> / adet
+        💰 Fiyatlar ürün bazlıdır — <span class="text-fire-400 font-bold">Ayarlar</span> ⚙️'den güncelleyebilirsiniz.
       </div>
     </div>
   </div>
@@ -190,6 +214,20 @@
           </div>
         </div>
         <div class="flex items-center gap-2 flex-wrap">
+          <!-- Masaüstü bildirimi -->
+          <button id="btn-bildirim" onclick="bildirimDurumunuDegistir()"
+            class="btn-press items-center gap-2 px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50
+                   text-dark-400 font-semibold rounded-xl transition-all duration-200 text-sm" title="Masaüstü bildirimleri">
+            🔔
+          </button>
+
+          <!-- Ayarlar -->
+          <button id="btn-ayarlar" onclick="ayarModalAc()"
+            class="btn-press items-center gap-2 px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50
+                   text-dark-300 font-semibold rounded-xl transition-all duration-200 text-sm" title="Ayarlar (Fiyat / Ürünler)">
+            ⚙️
+          </button>
+
           <!-- WhatsApp Durum Badge -->
           <div id="wa-badge" class="flex items-center gap-2 bg-dark-800 border border-dark-700/50 px-3 py-2 rounded-xl cursor-pointer" onclick="switchTab('main')" title="WhatsApp Durumu">
             <div id="wa-badge-dot" class="w-2.5 h-2.5 bg-dark-500 rounded-full"></div>
@@ -228,7 +266,7 @@
         </div>
       </div>
 
-      <div class="flex gap-1 mt-4">
+      <div class="flex gap-1 mt-4 flex-wrap">
         <button id="tab-main" onclick="switchTab('main')"
                 class="tab-active px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 bg-dark-800 text-fire-400 hover:bg-dark-700">
           📋 Siparişler
@@ -236,6 +274,18 @@
         <button id="tab-report" onclick="switchTab('report')"
                 class="px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 text-dark-400 hover:bg-dark-800 hover:text-dark-200">
           📊 Günlük Rapor
+        </button>
+        <button id="tab-stok" onclick="switchTab('stok')"
+                class="px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 text-dark-400 hover:bg-dark-800 hover:text-dark-200">
+          📦 Stok
+        </button>
+        <button id="tab-kasa" onclick="switchTab('kasa')"
+                class="px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 text-dark-400 hover:bg-dark-800 hover:text-dark-200">
+          💰 Gelir / Gider
+        </button>
+        <button id="tab-karlilik" onclick="switchTab('karlilik')"
+                class="px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 text-dark-400 hover:bg-dark-800 hover:text-dark-200">
+          📈 Kârlılık
         </button>
       </div>
     </div>
@@ -299,9 +349,9 @@
 
           <div class="mt-5 pt-4 border-t border-dark-700/40">
             <div class="bg-fire-500/5 border border-fire-500/10 rounded-xl p-3 text-center">
-              <span class="text-dark-400 text-sm">Birim Fiyat:</span>
-              <span class="text-fire-400 font-black text-xl ml-2">15 ₺</span>
-              <span class="text-dark-500 text-xs block mt-0.5">/ adet (hamur + işçilik)</span>
+              <span class="text-dark-400 text-sm">Seçili Ürün Fiyatı:</span>
+              <span id="form-birim-fiyat" class="text-fire-400 font-black text-xl ml-2">— ₺</span>
+              <span class="text-dark-500 text-xs block mt-0.5">/ adet (hamur + işçilik) — ürüne göre değişir</span>
             </div>
           </div>
 
@@ -339,6 +389,27 @@
         </div>
 
         <div id="siparisler-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+
+        <!-- Fırından çıkanlar + isim/telefon arama -->
+        <div class="mt-8 pt-6 border-t border-dark-700/40">
+          <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-xl">✅</div>
+              <h2 class="text-xl font-bold text-gray-100">Fırından Çıkanlar</h2>
+              <span id="cikanlar-count" class="bg-emerald-600/20 text-emerald-400 px-2.5 py-1 rounded-lg text-sm font-bold">0</span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <input type="date" id="cikanlar-tarih"
+                class="px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+              <input type="text" id="cikanlar-arama" placeholder="İsim / telefon ara (tüm tarihler)..."
+                class="px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+              <button onclick="cikanlariYukle()" class="btn-press px-3 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 rounded-lg text-sm font-semibold transition-all">Ara</button>
+            </div>
+          </div>
+          <div id="cikanlar-list" class="space-y-2 max-h-[440px] overflow-y-auto pr-1">
+            <p class="text-dark-500 text-center py-6">Bugün henüz sipariş çıkmadı.</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -348,7 +419,7 @@
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 bg-fire-500/10 rounded-xl flex items-center justify-center text-xl">📊</div>
           <div>
-            <h2 class="text-xl font-bold text-gray-100">Günlük Rapor</h2>
+            <h2 class="text-xl font-bold text-gray-100">Satış Raporu</h2>
             <p id="rapor-tarih" class="text-dark-400 text-sm"></p>
           </div>
         </div>
@@ -365,6 +436,24 @@
             </svg>
           </button>
         </div>
+      </div>
+
+      <!-- Rapor Tarih Filtresi -->
+      <div class="flex items-center gap-2 flex-wrap mb-6 bg-dark-900/60 border border-dark-700/40 rounded-xl p-3">
+        <button id="rapor-btn-bugun" onclick="bugunSec()"
+          class="btn-press px-4 py-2 bg-fire-600/20 hover:bg-fire-600/30 border border-fire-500/30 text-fire-400 font-bold rounded-lg text-sm transition-all">
+          Bugün
+        </button>
+        <span class="text-dark-500 text-sm mx-1">veya tarih aralığı:</span>
+        <input type="date" id="rapor-baslangic"
+          class="px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        <span class="text-dark-500">–</span>
+        <input type="date" id="rapor-bitis"
+          class="px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        <button onclick="raporYukle('aralik')"
+          class="btn-press px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 font-semibold rounded-lg text-sm transition-all">
+          Aralığı Getir
+        </button>
       </div>
 
       <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
@@ -386,8 +475,24 @@
         </div>
         <div class="bg-gradient-to-br from-fire-600/20 to-fire-700/10 rounded-2xl border border-fire-500/30 p-5 text-center">
           <div class="text-4xl font-black text-fire-300" id="rapor-toplam-ciro">0 ₺</div>
-          <div class="text-fire-400/70 text-sm font-semibold mt-1">Günlük Ciro</div>
+          <div class="text-fire-400/70 text-sm font-semibold mt-1">Toplam Ciro</div>
         </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4 mb-8">
+        <div class="bg-dark-900/80 rounded-2xl border border-emerald-500/30 p-5 text-center">
+          <div class="text-3xl font-black text-emerald-400" id="rapor-tahsil">0 ₺</div>
+          <div class="text-dark-400 text-sm font-semibold mt-1">💵 Tahsil Edilen</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-amber-500/30 p-5 text-center">
+          <div class="text-3xl font-black text-amber-400" id="rapor-bekleyen-odeme">0 ₺</div>
+          <div class="text-dark-400 text-sm font-semibold mt-1">⏳ Bekleyen Ödeme</div>
+        </div>
+      </div>
+
+      <div id="rapor-gunler-kutu" class="hidden bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6 mb-6">
+        <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2"><span>📅</span> Gün Gün Döküm</h3>
+        <div id="rapor-gunler" class="space-y-2 max-h-80 overflow-y-auto pr-2"></div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -396,9 +501,207 @@
           <div id="urun-rapor-list" class="space-y-3"><p class="text-dark-500 text-center py-4">Henüz veri yok</p></div>
         </div>
         <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6">
-          <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2"><span>✅</span> Bugün Teslim Edilenler</h3>
+          <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2"><span>✅</span> Teslim Edilenler</h3>
           <div id="tamamlanan-list" class="space-y-2 max-h-96 overflow-y-auto pr-2"><p class="text-dark-500 text-center py-4">Henüz teslim yok</p></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ═══ STOK TAB ═══ -->
+    <div id="panel-stok" class="hidden">
+      <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-sky-500/10 rounded-xl flex items-center justify-center text-xl">📦</div>
+          <div>
+            <h2 class="text-xl font-bold text-gray-100">Stok Takip</h2>
+            <p class="text-dark-400 text-sm">Malzemeler, reçeteler ve kritik seviye uyarıları</p>
+          </div>
+        </div>
+        <button onclick="stokYukle()" class="text-dark-400 hover:text-fire-400 transition-colors p-2 rounded-lg hover:bg-dark-800" title="Yenile">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        </button>
+      </div>
+
+      <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-5 mb-6">
+        <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2">➕ Yeni Malzeme Ekle</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <input id="stok-yeni-ad" type="text" maxlength="50" placeholder="Malzeme (un, maya, kıyma...)"
+            class="col-span-2 md:col-span-1 px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          <input id="stok-yeni-birim" type="text" maxlength="15" value="kg" placeholder="Birim"
+            class="px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          <input id="stok-yeni-miktar" type="number" min="0" step="0.01" placeholder="Başlangıç miktarı"
+            class="px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          <input id="stok-yeni-kritik" type="number" min="0" step="0.01" placeholder="Kritik seviye"
+            class="px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          <input id="stok-yeni-maliyet" type="number" min="0" step="0.01" placeholder="Alış fiyatı (₺/birim)"
+            class="px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          <input id="stok-yeni-tedarikci" type="text" maxlength="60" placeholder="Tedarikçi"
+            class="px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          <button onclick="stokEkle()" class="btn-press px-4 py-2.5 bg-fire-600 hover:bg-fire-500 text-white font-bold rounded-xl transition-all">Ekle</button>
+        </div>
+      </div>
+
+      <div id="stok-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6">
+          <h3 class="text-lg font-bold text-gray-100 mb-2 flex items-center gap-2"><span>🍽️</span> Reçeteler</h3>
+          <p class="text-dark-500 text-xs mb-4">Bir ürün fırından çıktığında reçetesindeki malzemeler stoktan otomatik düşer.</p>
+          <div id="recete-list" class="space-y-2 max-h-96 overflow-y-auto pr-2"></div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6">
+          <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2"><span>🕒</span> Son Stok Hareketleri</h3>
+          <div id="stok-hareket-list" class="space-y-2 max-h-96 overflow-y-auto pr-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ KASA TAB ═══ -->
+    <div id="panel-kasa" class="hidden">
+      <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-xl">💰</div>
+          <div>
+            <h2 class="text-xl font-bold text-gray-100">Gelir / Gider (Kasa)</h2>
+            <p id="kasa-tarih" class="text-dark-400 text-sm"></p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="csvIndir('giderler')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl" title="Giderleri Excel/CSV indir">⬇️ Giderler (CSV)</button>
+          <button onclick="csvIndir('siparisler')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl" title="Siparişleri Excel/CSV indir">⬇️ Siparişler (CSV)</button>
+          <button onclick="kasaYukle()" class="text-dark-400 hover:text-fire-400 transition-colors p-2 rounded-lg hover:bg-dark-800" title="Yenile">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap mb-6 bg-dark-900/60 border border-dark-700/40 rounded-xl p-3">
+        <button onclick="kasaHizli('bugun')" class="btn-press px-4 py-2 bg-fire-600/20 hover:bg-fire-600/30 border border-fire-500/30 text-fire-400 font-bold rounded-lg text-sm transition-all">Bugün</button>
+        <button onclick="kasaHizli('ay')" class="btn-press px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 font-semibold rounded-lg text-sm transition-all">Bu Ay</button>
+        <span class="text-dark-500 text-sm mx-1">veya:</span>
+        <input type="date" id="kasa-baslangic" class="px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        <span class="text-dark-500">–</span>
+        <input type="date" id="kasa-bitis" class="px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        <button onclick="kasaYukle()" class="btn-press px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 font-semibold rounded-lg text-sm transition-all">Getir</button>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-dark-900/80 rounded-2xl border border-emerald-500/30 p-5 text-center">
+          <div class="text-3xl font-black text-emerald-400" id="kasa-gelir">0 ₺</div>
+          <div class="text-dark-400 text-sm font-semibold mt-1">💵 Gelir (Tahsil)</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-amber-500/30 p-5 text-center">
+          <div class="text-3xl font-black text-amber-400" id="kasa-bekleyen">0 ₺</div>
+          <div class="text-dark-400 text-sm font-semibold mt-1">⏳ Bekleyen Ödeme</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-red-500/30 p-5 text-center">
+          <div class="text-3xl font-black text-red-400" id="kasa-gider">0 ₺</div>
+          <div class="text-dark-400 text-sm font-semibold mt-1">📉 Gider</div>
+        </div>
+        <div class="bg-gradient-to-br from-fire-600/20 to-fire-700/10 rounded-2xl border border-fire-500/30 p-5 text-center">
+          <div class="text-3xl font-black text-fire-300" id="kasa-net">0 ₺</div>
+          <div class="text-fire-400/70 text-sm font-semibold mt-1">📊 Net Kâr</div>
+        </div>
+      </div>
+
+      <!-- Gün gün gelir/gider grafiği -->
+      <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6 mb-8">
+        <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2"><span>📊</span> Gün Gün Gelir / Gider</h3>
+        <div id="kasa-grafik" class="flex items-end gap-1.5 h-48 overflow-x-auto pb-2"></div>
+        <div class="flex items-center gap-4 text-xs text-dark-400 mt-3">
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-500 inline-block"></span> Gelir</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-red-500 inline-block"></span> Gider</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6">
+          <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2">➕ Gider Ekle</h3>
+          <div class="space-y-3">
+            <input id="gider-aciklama" type="text" maxlength="80" placeholder="Açıklama (un alımı, elektrik...)"
+              class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+            <input id="gider-miktar" type="number" min="0" step="0.01" placeholder="Tutar (₺)"
+              class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+            <select id="gider-kategori" class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50 cursor-pointer">
+              <option>Malzeme Alımı</option>
+              <option>Kira</option>
+              <option>Elektrik/Su/Doğalgaz</option>
+              <option>Personel</option>
+              <option>Diğer</option>
+            </select>
+            <input id="gider-tarih" type="date"
+              class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+            <button onclick="giderEkle()" class="btn-press w-full py-3 bg-red-600/80 hover:bg-red-600 text-white font-bold rounded-xl transition-all">Gider Ekle</button>
+          </div>
+        </div>
+        <div class="lg:col-span-2 bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6">
+          <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2"><span>📋</span> Giderler <span id="gider-toplam" class="text-red-400 text-sm font-bold ml-auto"></span></h3>
+          <div id="gider-list" class="space-y-2 max-h-[500px] overflow-y-auto pr-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ KÂRLILIK TAB ═══ -->
+    <div id="panel-karlilik" class="hidden">
+      <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-fire-500/10 rounded-xl flex items-center justify-center text-xl">📈</div>
+          <div>
+            <h2 class="text-xl font-bold text-gray-100">Kârlılık & Analiz</h2>
+            <p id="karlilik-tarih" class="text-dark-400 text-sm"></p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button onclick="csvIndir('karlilik')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl">⬇️ Kârlılık (CSV)</button>
+          <button onclick="csvIndir('stok')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl">⬇️ Stok (CSV)</button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap mb-6 bg-dark-900/60 border border-dark-700/40 rounded-xl p-3">
+        <button onclick="karlilikHizli('bugun')" class="btn-press px-4 py-2 bg-fire-600/20 hover:bg-fire-600/30 border border-fire-500/30 text-fire-400 font-bold rounded-lg text-sm transition-all">Bugün</button>
+        <button onclick="karlilikHizli('ay')" class="btn-press px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 font-semibold rounded-lg text-sm transition-all">Bu Ay</button>
+        <span class="text-dark-500 text-sm mx-1">veya:</span>
+        <input type="date" id="karlilik-baslangic" class="px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        <span class="text-dark-500">–</span>
+        <input type="date" id="karlilik-bitis" class="px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        <button onclick="karlilikYukle()" class="btn-press px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 font-semibold rounded-lg text-sm transition-all">Getir</button>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-5 text-center">
+          <div class="text-3xl font-black text-fire-400" id="kar-ciro">0 ₺</div>
+          <div class="text-dark-400 text-sm font-semibold mt-1">Ciro</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-5 text-center">
+          <div class="text-3xl font-black text-amber-400" id="kar-maliyet">0 ₺</div>
+          <div class="text-dark-400 text-sm font-semibold mt-1">İç Maliyet</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-emerald-500/30 p-5 text-center">
+          <div class="text-3xl font-black text-emerald-400" id="kar-kar">0 ₺</div>
+          <div class="text-dark-400 text-sm font-semibold mt-1">Brüt Kâr</div>
+        </div>
+        <div class="bg-gradient-to-br from-fire-600/20 to-fire-700/10 rounded-2xl border border-fire-500/30 p-5 text-center">
+          <div class="text-3xl font-black text-fire-300" id="kar-marj">0%</div>
+          <div class="text-fire-400/70 text-sm font-semibold mt-1">Kâr Marjı</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6">
+          <h3 class="text-lg font-bold text-gray-100 mb-1 flex items-center gap-2"><span>🏆</span> Ürün Bazlı Kârlılık</h3>
+          <p class="text-dark-500 text-xs mb-4">Maliyet, reçetedeki malzeme alış fiyatlarından hesaplanır. Stok sekmesinden güncelleyebilirsiniz.</p>
+          <div id="kar-urun-list" class="space-y-2 max-h-[420px] overflow-y-auto pr-1"></div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6">
+          <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2"><span>👥</span> En Çok Alışveriş Yapanlar</h3>
+          <div id="kar-musteri-list" class="space-y-2 max-h-[420px] overflow-y-auto pr-1"></div>
+        </div>
+      </div>
+
+      <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-6">
+        <h3 class="text-lg font-bold text-gray-100 mb-4 flex items-center gap-2"><span>⏰</span> Saatlik Yoğunluk</h3>
+        <div id="kar-saatlik" class="flex items-end gap-1 h-40 overflow-x-auto pb-2"></div>
+        <div class="text-dark-500 text-xs mt-2">Siparişlerin fırından çıktığı saatlere göre dağılım. Yoğun saatleri görüp hazırlığınızı planlayın.</div>
       </div>
     </div>
   </main>
@@ -406,6 +709,236 @@
   <footer class="border-t border-dark-700/30 mt-12 py-4">
     <p class="text-center text-dark-600 text-sm">🔥 Emanet Lahmacun & Pide Takip Sistemi &mdash; Lokal Sistem &copy; 2026</p>
   </footer>
+
+  <!-- ═══ AYARLAR MODALI ═══ -->
+  <div id="settings-modal" class="hidden fixed inset-0 z-[55] bg-black/70 backdrop-blur-sm items-center justify-center p-4">
+    <div class="bg-dark-900 rounded-2xl border border-dark-700/50 w-full max-w-lg max-h-[90vh] overflow-y-auto scale-in">
+      <div class="flex items-center justify-between p-5 border-b border-dark-700/40 sticky top-0 bg-dark-900 z-10">
+        <h2 class="text-xl font-bold text-gray-100 flex items-center gap-2">⚙️ Ayarlar</h2>
+        <button onclick="ayarModalKapat()" class="text-dark-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-dark-800 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-6">
+        <div class="bg-fire-500/5 border border-fire-500/15 rounded-xl p-3.5">
+          <p class="text-dark-300 text-sm font-semibold">💰 Ürün Bazlı Fiyatlandırma</p>
+          <p class="text-dark-500 text-xs mt-1">Her ürünün birim fiyatını (hamur + işçilik) aşağıdaki satırlardan ayrı ayrı ayarlayın. Sipariş, tamamlandığı andaki fiyatla hesaplanır ve raporlara öyle işlenir.</p>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-sm font-semibold text-dark-300">Ürünler</label>
+            <button type="button" onclick="ayarUrunSatiriEkle('','')"
+              class="btn-press px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-gray-200 text-xs font-semibold rounded-lg transition-all">
+              + Ürün Ekle
+            </button>
+          </div>
+          <div id="ayar-urunler-list" class="space-y-2"></div>
+          <p class="text-dark-500 text-xs mt-1.5 ml-1">İkon kutusuna emoji (örn. 🥙), yanındaki kutulara ürün adı ve fiyatını yazın.</p>
+        </div>
+
+        <!-- İşletme & Bildirim -->
+        <div class="pt-2 border-t border-dark-700/40">
+          <p class="text-sm font-semibold text-dark-300 mb-3">🏪 İşletme & Bildirim</p>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-semibold text-dark-400 mb-1.5">İşletme Adı</label>
+              <input id="ayar-isletme-adi" type="text" maxlength="40" placeholder="Örn: Abdulsamet Fırın"
+                class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-dark-400 mb-1.5">Sahip Telefonu (kritik stok uyarısı için)</label>
+              <input id="ayar-sahip-telefon" type="tel" maxlength="13" placeholder="05XX XXX XX XX"
+                class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+              <p class="text-dark-500 text-xs mt-1">Malzeme kritik seviyeye inince bu numaraya WhatsApp'tan uyarı gider.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-dark-400 mb-1.5">Ort. Hazırlık (dakika)</label>
+                <input id="ayar-hazirlik-dk" type="number" min="1" max="600" step="1"
+                  class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+              </div>
+              <div class="flex flex-col justify-end gap-2">
+                <label class="flex items-center gap-2 cursor-pointer text-sm text-dark-300">
+                  <input id="ayar-kritik-uyari" type="checkbox" class="w-4 h-4 accent-fire-500" /> Kritik stok uyarısı
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-sm text-dark-300">
+                  <input id="ayar-oto-cevap" type="checkbox" class="w-4 h-4 accent-fire-500" /> Otomatik cevap robotu
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mesaj Şablonu -->
+        <div class="pt-2 border-t border-dark-700/40">
+          <p class="text-sm font-semibold text-dark-300 mb-2">💬 WhatsApp Mesaj Şablonu</p>
+          <textarea id="ayar-mesaj-sablonu" rows="4" maxlength="1200"
+            class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50"></textarea>
+          <p class="text-dark-500 text-xs mt-1.5">Kullanabileceğiniz alanlar: <b>{musteri}</b>, <b>{adet}</b>, <b>{urun}</b>, <b>{tutar}</b>, <b>{isletme}</b></p>
+        </div>
+
+        <!-- Kullanıcılar (yönetici) -->
+        <div id="ayar-kullanicilar-kutu" class="pt-2 border-t border-dark-700/40 hidden">
+          <p class="text-sm font-semibold text-dark-300 mb-2">🔐 Kullanıcılar & Roller</p>
+          <p class="text-dark-500 text-xs mb-3">Kullanıcı eklerseniz giriş ekranında kullanıcı adı istenir. <b>personel</b> rolü finans/ayar/yedek bölümlerine erişemez.</p>
+          <div id="ayar-kullanicilar-list" class="space-y-2 mb-3"></div>
+          <div class="grid grid-cols-2 gap-2">
+            <input id="ayar-yeni-kullanici" type="text" maxlength="30" placeholder="Kullanıcı adı"
+              class="col-span-2 sm:col-span-1 px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+            <input id="ayar-yeni-sifre" type="password" maxlength="60" placeholder="Şifre"
+              class="col-span-2 sm:col-span-1 px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+            <select id="ayar-yeni-rol" class="col-span-2 sm:col-span-1 px-3 py-2 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-fire-500/50 cursor-pointer">
+              <option value="personel">Personel</option>
+              <option value="admin">Yönetici</option>
+            </select>
+            <button type="button" onclick="kullaniciEkle()" class="col-span-2 sm:col-span-1 btn-press px-3 py-2 bg-fire-600 hover:bg-fire-500 text-white text-sm font-bold rounded-lg transition-all">+ Kullanıcı Ekle</button>
+          </div>
+        </div>
+
+        <!-- Yedek & Veri (yönetici) -->
+        <div id="ayar-yedek-kutu" class="pt-2 border-t border-dark-700/40 hidden">
+          <p class="text-sm font-semibold text-dark-300 mb-2">💾 Yedek & Veri</p>
+          <div class="flex items-center gap-2 flex-wrap mb-3">
+            <button type="button" onclick="yedekAl()" class="btn-press px-3 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-all">💾 Şimdi Yedek Al</button>
+            <label class="btn-press px-3 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 text-xs font-semibold rounded-lg cursor-pointer">
+              ♻️ Yedekten Geri Yükle
+              <input type="file" id="yedek-dosya" accept=".db" class="hidden" onchange="yedekYukle(this)" />
+            </label>
+            <button type="button" onclick="csvIndir('siparisler')" class="btn-press px-3 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 text-xs font-semibold rounded-lg">⬇️ Siparişler (CSV)</button>
+          </div>
+          <div id="ayar-yedek-list" class="space-y-1.5 max-h-44 overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- İşlem geçmişi (yönetici) -->
+        <div id="ayar-log-kutu" class="pt-2 border-t border-dark-700/40 hidden">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-semibold text-dark-300">📜 Son İşlemler</p>
+            <button type="button" onclick="mesajlariGoster()" class="text-dark-400 hover:text-fire-400 text-xs underline">Mesaj geçmişini gör</button>
+          </div>
+          <div id="ayar-log-list" class="space-y-1.5 max-h-44 overflow-y-auto pr-1"></div>
+        </div>
+      </div>
+
+      <div class="p-5 border-t border-dark-700/40 flex items-center justify-end gap-3 sticky bottom-0 bg-dark-900">
+        <button onclick="ayarModalKapat()" class="btn-press px-5 py-2.5 bg-dark-800 hover:bg-dark-700 text-gray-300 font-semibold rounded-xl transition-all">
+          Vazgeç
+        </button>
+        <button onclick="ayarlariKaydet()" class="btn-press px-6 py-2.5 bg-gradient-to-r from-fire-600 to-fire-700 hover:from-fire-500 hover:to-fire-600 text-white font-bold rounded-xl shadow-lg shadow-fire-600/25 transition-all">
+          Kaydet
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ STOK HAREKET MODALI ═══ -->
+  <div id="stok-hareket-modal" class="hidden fixed inset-0 z-[55] bg-black/70 backdrop-blur-sm items-center justify-center p-4">
+    <div class="bg-dark-900 rounded-2xl border border-dark-700/50 w-full max-w-sm scale-in">
+      <div class="flex items-center justify-between p-5 border-b border-dark-700/40">
+        <h2 id="stok-hareket-baslik" class="text-lg font-bold text-gray-100">Stok Hareketi</h2>
+        <button onclick="stokHareketKapat()" class="text-dark-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-dark-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <input type="hidden" id="stok-hareket-id" />
+        <input type="hidden" id="stok-hareket-tip" />
+        <p id="stok-hareket-aciklama" class="text-dark-400 text-sm"></p>
+        <div>
+          <label class="block text-sm font-semibold text-dark-300 mb-2">Miktar</label>
+          <input type="number" id="stok-hareket-miktar" min="0" step="0.01"
+            class="w-full px-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 text-lg focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        </div>
+        <div id="stok-hareket-tutar-kutu" class="hidden">
+          <label class="block text-sm font-semibold text-dark-300 mb-2">Alım Tutarı (₺) — opsiyonel</label>
+          <input type="number" id="stok-hareket-tutar" min="0" step="0.01" placeholder="Örn: 250"
+            class="w-full px-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          <p class="text-dark-500 text-xs mt-1">Tutar girersen alış fiyatı otomatik güncellenir ve kasaya gider olarak eklenir.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-dark-300 mb-2">Not (opsiyonel)</label>
+          <input type="text" id="stok-hareket-not" maxlength="120" placeholder="Örn: marketten alındı"
+            class="w-full px-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        </div>
+      </div>
+      <div class="p-5 border-t border-dark-700/40 flex justify-end gap-3">
+        <button onclick="stokHareketKapat()" class="btn-press px-5 py-2.5 bg-dark-800 hover:bg-dark-700 text-gray-300 font-semibold rounded-xl">Vazgeç</button>
+        <button onclick="stokHareketKaydet()" class="btn-press px-6 py-2.5 bg-fire-600 hover:bg-fire-500 text-white font-bold rounded-xl">Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ STOK DÜZENLE MODALI ═══ -->
+  <div id="stok-duzenle-modal" class="hidden fixed inset-0 z-[55] bg-black/70 backdrop-blur-sm items-center justify-center p-4">
+    <div class="bg-dark-900 rounded-2xl border border-dark-700/50 w-full max-w-sm scale-in">
+      <div class="flex items-center justify-between p-5 border-b border-dark-700/40">
+        <h2 class="text-lg font-bold text-gray-100">✏️ Malzemeyi Düzenle</h2>
+        <button onclick="stokDuzenleKapat()" class="text-dark-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-dark-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <input type="hidden" id="stok-duzenle-id" />
+        <div>
+          <label class="block text-sm font-semibold text-dark-300 mb-2">Malzeme Adı</label>
+          <input type="text" id="stok-duzenle-ad" maxlength="50"
+            class="w-full px-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-semibold text-dark-300 mb-2">Birim</label>
+            <input type="text" id="stok-duzenle-birim" maxlength="15"
+              class="w-full px-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-dark-300 mb-2">Kritik Seviye</label>
+            <input type="number" id="stok-duzenle-kritik" min="0" step="0.01"
+              class="w-full px-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-dark-300 mb-2">Alış Fiyatı (₺/birim)</label>
+            <input type="number" id="stok-duzenle-maliyet" min="0" step="0.01"
+              class="w-full px-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-dark-300 mb-2">Tedarikçi</label>
+            <input type="text" id="stok-duzenle-tedarikci" maxlength="60"
+              class="w-full px-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
+          </div>
+        </div>
+      </div>
+      <div class="p-5 border-t border-dark-700/40 flex justify-end gap-3">
+        <button onclick="stokDuzenleKapat()" class="btn-press px-5 py-2.5 bg-dark-800 hover:bg-dark-700 text-gray-300 font-semibold rounded-xl">Vazgeç</button>
+        <button onclick="stokDuzenleKaydet()" class="btn-press px-6 py-2.5 bg-fire-600 hover:bg-fire-500 text-white font-bold rounded-xl">Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ REÇETE MODALI ═══ -->
+  <div id="recete-modal" class="hidden fixed inset-0 z-[55] bg-black/70 backdrop-blur-sm items-center justify-center p-4">
+    <div class="bg-dark-900 rounded-2xl border border-dark-700/50 w-full max-w-lg max-h-[90vh] overflow-y-auto scale-in">
+      <div class="flex items-center justify-between p-5 border-b border-dark-700/40 sticky top-0 bg-dark-900 z-10">
+        <h2 class="text-lg font-bold text-gray-100">🍽️ Reçete: <span id="recete-urun-adi" class="text-fire-400"></span></h2>
+        <button onclick="receteKapat()" class="text-dark-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-dark-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5">
+        <p class="text-dark-500 text-xs mb-4">Bu ürünün <b>1 adedi</b> üretildiğinde stoktan düşecek malzemeleri girin. Sipariş fırından çıkınca otomatik düşer.</p>
+        <input type="hidden" id="recete-urun" />
+        <div id="recete-kalemler" class="space-y-2"></div>
+        <button onclick="receteSatiriEkle()"
+          class="btn-press mt-3 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 text-xs font-semibold rounded-lg transition-all">
+          + Malzeme Ekle
+        </button>
+      </div>
+      <div class="p-5 border-t border-dark-700/40 flex justify-end gap-3 sticky bottom-0 bg-dark-900">
+        <button onclick="receteKapat()" class="btn-press px-5 py-2.5 bg-dark-800 hover:bg-dark-700 text-gray-300 font-semibold rounded-xl">Vazgeç</button>
+        <button onclick="receteKaydet()" class="btn-press px-6 py-2.5 bg-fire-600 hover:bg-fire-500 text-white font-bold rounded-xl">Kaydet</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js"></script>

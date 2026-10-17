@@ -1,5 +1,8 @@
 @echo off
 chcp 65001 >nul
+:: Bu dosyanin bulundugu klasore gec (yonetici olarak calistirilinca
+:: varsayilan klasor C:\Windows\System32 oldugu icin npm install yanlis yerde calisiyordu)
+cd /d "%~dp0"
 cls
 echo ======================================================
 echo             EMANET TAKIP SISTEMI KURULUMU

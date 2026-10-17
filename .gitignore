@@ -19,10 +19,14 @@ emanet.db
 # Ortam Değişkenleri ve Gizli Anahtarlar (Environment Variables & Secrets)
 .env
 .env.*
+!.env.example
 *.env
 *.pem
 *.key
 *.cert
+
+# Veritabanı Yedekleri
+yedekler/
 
 # Geçici Dosyalar ve İşletim Sistemi Kalıntıları (Temp & OS files)
 .DS_Store
