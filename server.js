@@ -337,6 +337,129 @@ function tarihAraligi(q) {
   return { baslangic, bitis };
 }
 
+// Detaylı dönem raporu: kâr/zarar özeti + ürün/gider/gün/müşteri/saat dökümleri
+function detayliRapor(baslangic, bitis) {
+  const aralik = [baslangic, bitis];
+
+  // Ürün bazlı döküm
+  const urunHam = queryAll(`
+    SELECT urun_turu,
+           COALESCE(SUM(adet),0) AS adet,
+           COUNT(*) AS siparis,
+           COALESCE(SUM(adet * COALESCE(birim_fiyat,0)),0) AS ciro,
+           COALESCE(SUM(CASE WHEN odeme_durumu = 'Ödendi' THEN adet * COALESCE(birim_fiyat,0) ELSE 0 END),0) AS tahsil
+    FROM siparisler
+    WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?
+    GROUP BY urun_turu`, aralik);
+
+  const stokVar = stokAktif();
+  const urunler = urunHam.map((u) => {
+    const maliyetBirim = stokVar ? urunMaliyet(u.urun_turu) : 0;
+    const maliyet = yuvarla(maliyetBirim * (u.adet || 0));
+    const kar = yuvarla((u.ciro || 0) - maliyet);
+    return {
+      urun_turu: u.urun_turu, adet: yuvarla(u.adet), siparis: u.siparis,
+      ciro: yuvarla(u.ciro), tahsil: yuvarla(u.tahsil), maliyet, kar,
+      marj: u.ciro > 0 ? Math.round((kar / u.ciro) * 1000) / 10 : 0
+    };
+  }).sort((a, b) => b.kar - a.kar);
+
+  // Giderler (kategori bazlı)
+  const giderKategorileri = queryAll(`
+    SELECT kategori, COUNT(*) AS adet, COALESCE(SUM(miktar),0) AS toplam
+    FROM giderler WHERE tarih BETWEEN ? AND ?
+    GROUP BY kategori ORDER BY toplam DESC`, aralik)
+    .map((g) => ({ kategori: g.kategori || 'Diğer', adet: g.adet, toplam: yuvarla(g.toplam) }));
+  const giderToplam = yuvarla(giderKategorileri.reduce((t, g) => t + g.toplam, 0));
+  const giderMalzeme = yuvarla(giderKategorileri
+    .filter((g) => g.kategori === 'Malzeme Alımı')
+    .reduce((t, g) => t + g.toplam, 0));
+
+  // Gün gün döküm
+  const gunHam = queryAll(`
+    SELECT date(cikis_zamani) AS gun, COUNT(*) AS siparis,
+           COALESCE(SUM(adet),0) AS adet,
+           COALESCE(SUM(adet * COALESCE(birim_fiyat,0)),0) AS ciro,
+           COALESCE(SUM(CASE WHEN odeme_durumu = 'Ödendi' THEN adet * COALESCE(birim_fiyat,0) ELSE 0 END),0) AS tahsil
+    FROM siparisler
+    WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?
+    GROUP BY gun ORDER BY gun`, aralik);
+  const gunGiderHam = queryAll(`
+    SELECT tarih AS gun, COALESCE(SUM(miktar),0) AS gider
+    FROM giderler WHERE tarih BETWEEN ? AND ? GROUP BY tarih`, aralik);
+  const gunGiderMap = {};
+  gunGiderHam.forEach((g) => { gunGiderMap[g.gun] = g.gider; });
+  const gunler = gunHam.map((g) => ({
+    gun: g.gun, siparis: g.siparis, adet: yuvarla(g.adet),
+    ciro: yuvarla(g.ciro), tahsil: yuvarla(g.tahsil),
+    gider: yuvarla(gunGiderMap[g.gun] || 0)
+  }));
+
+  // Müşteri dökümü
+  const musteriler = queryAll(`
+    SELECT musteri_adi, telefon, COUNT(*) AS siparis,
+           COALESCE(SUM(adet),0) AS adet,
+           COALESCE(SUM(adet * COALESCE(birim_fiyat,0)),0) AS ciro,
+           COALESCE(SUM(CASE WHEN odeme_durumu != 'Ödendi' THEN adet * COALESCE(birim_fiyat,0) ELSE 0 END),0) AS bekleyen
+    FROM siparisler
+    WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?
+    GROUP BY telefon, musteri_adi ORDER BY ciro DESC LIMIT 50`, aralik)
+    .map((m) => ({ ...m, adet: yuvarla(m.adet), ciro: yuvarla(m.ciro), bekleyen: yuvarla(m.bekleyen) }));
+
+  // Saatlik yoğunluk
+  const saatHam = queryAll(`
+    SELECT strftime('%H', cikis_zamani) AS saat, COUNT(*) AS siparis, COALESCE(SUM(adet),0) AS adet
+    FROM siparisler
+    WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?
+    GROUP BY saat ORDER BY saat`, aralik);
+  const saatMap = {};
+  saatHam.forEach((s) => { saatMap[s.saat] = s; });
+  const saatlik = [];
+  for (let h = 0; h < 24; h++) {
+    const k = String(h).padStart(2, '0');
+    saatlik.push(saatMap[k] || { saat: k, siparis: 0, adet: 0 });
+  }
+
+  // Teslim edilen siparişler (satır satır)
+  const tamamlananlar = queryAll(`
+    SELECT * FROM siparisler
+    WHERE durum = 'Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?
+    ORDER BY cikis_zamani ASC`, aralik).map((s) => ({
+      id: s.id, musteri_adi: s.musteri_adi, telefon: s.telefon, urun_turu: s.urun_turu,
+      adet: s.adet, birim_fiyat: s.birim_fiyat,
+      tutar: yuvarla((s.adet || 0) * (s.birim_fiyat || 0)),
+      odeme_durumu: s.odeme_durumu, cikis_zamani: s.cikis_zamani, giris_zamani: s.giris_zamani
+    }));
+
+  // Özet
+  const ciro = yuvarla(urunler.reduce((t, u) => t + u.ciro, 0));
+  const tahsil = yuvarla(urunler.reduce((t, u) => t + u.tahsil, 0));
+  const malzemeMaliyeti = yuvarla(urunler.reduce((t, u) => t + u.maliyet, 0));
+  const brutKar = yuvarla(ciro - malzemeMaliyeti);
+  // Stok takibi açıkken malzeme alımları "maliyet" olarak zaten sayılır; çift saymamak için hariç tutulur.
+  const giderDiger = yuvarla(stokVar ? (giderToplam - giderMalzeme) : giderToplam);
+  const netKar = yuvarla(brutKar - giderDiger);
+  const siparisSayisi = urunler.reduce((t, u) => t + (u.siparis || 0), 0);
+  const toplamAdet = yuvarla(urunler.reduce((t, u) => t + u.adet, 0));
+
+  return {
+    baslangic, bitis,
+    isletme_adi: ayarGetir('isletme_adi', 'Fırın'),
+    stok_aktif: stokVar,
+    ozet: {
+      siparis_sayisi: siparisSayisi, toplam_adet: toplamAdet,
+      ciro, tahsil, bekleyen: yuvarla(ciro - tahsil),
+      malzeme_maliyeti: malzemeMaliyeti, brut_kar: brutKar,
+      brut_marj: ciro > 0 ? Math.round((brutKar / ciro) * 1000) / 10 : 0,
+      gider_toplam: giderToplam, gider_malzeme: giderMalzeme, gider_diger: giderDiger,
+      net_kar: netKar,
+      net_marj: ciro > 0 ? Math.round((netKar / ciro) * 1000) / 10 : 0,
+      ortalama_sepet: siparisSayisi > 0 ? yuvarla(ciro / siparisSayisi) : 0
+    },
+    urunler, giderKategorileri, gunler, musteriler, saatlik, tamamlananlar
+  };
+}
+
 // ─── AYARLAR (birim fiyat & ürün listesi) ───────────────────────────
 function ayarGetir(anahtar, varsayilan) {
   const row = queryOne('SELECT deger FROM ayarlar WHERE anahtar = ?', [anahtar]);
@@ -411,6 +534,11 @@ function receteDus(siparisId, urunTuru, adet) {
   } catch (e) {
     console.error('Reçete düşüm hatası:', e.message);
   }
+}
+
+// Stok takibi açık mı? (ayarlardan kapatılabilir; varsayılan: açık)
+function stokAktif() {
+  return ayarGetir('stok_aktif', '1') === '1';
 }
 
 // Ürün başına malzeme (iç maliyet) tutarı — reçeteden hesaplanır
@@ -648,6 +776,8 @@ async function initDatabase() {
     isletme_adi: 'Fırın',
     sahip_telefon: '',
     kritik_uyari: '1',
+    stok_aktif: '1',
+    oto_cevap: '1',
     hazirlik_dk: '15',
     mesaj_sablonu: 'Sayın {musteri}, getirmiş olduğunuz iç malzeme ile hazırlanan {adet} adet {urun} fırınımızdan taze çıkmıştır, hazırdır. Toplam hamur ve işçilik bedeli {tutar} TL\'dir. Ödeyip teslim alabilirsiniz. Afiyet olsun! 🔥'
   };
@@ -1113,13 +1243,19 @@ app.put('/api/siparis/:id/tamamla', (req, res) => {
       [adet, urunFiyatGetir(siparis.urun_turu), id]);
     const guncellenmis = queryOne('SELECT * FROM siparisler WHERE id = ?', [id]);
     const tutar = (guncellenmis.adet || 0) * (guncellenmis.birim_fiyat || 0);
-    // Reçetedeki malzemeleri stoktan düş
-    receteDus(id, siparis.urun_turu, adet);
-    const dusukStok = queryAll('SELECT ad FROM stok WHERE miktar <= kritik').map((s) => s.ad);
+    // Reçetedeki malzemeleri stoktan düş (stok takibi açıksa)
+    if (stokAktif()) receteDus(id, siparis.urun_turu, adet);
+    const dusukStok = stokAktif()
+      ? queryAll('SELECT ad FROM stok WHERE miktar <= kritik').map((s) => s.ad)
+      : [];
     islemKaydet(kullaniciAdi(req), 'siparis-tamamla', `#${id} ${siparis.urun_turu} ${adet} adet`);
     // Kritik stok varsa işletme sahibine otomatik WhatsApp uyarısı (arka planda)
-    kritikStokUyar();
-    res.json({ success: true, siparis: guncellenmis, tutar, dusuk_stok: dusukStok, birim_maliyet: urunMaliyet(siparis.urun_turu), message: 'Sipariş tamamlandı.' });
+    if (stokAktif()) kritikStokUyar();
+    res.json({
+      success: true, siparis: guncellenmis, tutar, dusuk_stok: dusukStok,
+      birim_maliyet: stokAktif() ? urunMaliyet(siparis.urun_turu) : 0,
+      message: 'Sipariş tamamlandı.'
+    });
   } catch (err) {
     console.error('Sipariş tamamlama hatası:', err);
     res.status(500).json({ error: 'Sipariş tamamlanırken hata oluştu.' });
@@ -1247,6 +1383,7 @@ app.get('/api/ayarlar', (req, res) => {
     isletme_adi: ayarGetir('isletme_adi', 'Fırın'),
     sahip_telefon: ayarGetir('sahip_telefon', ''),
     kritik_uyari: ayarGetir('kritik_uyari', '1') === '1',
+    stok_aktif: stokAktif(),
     oto_cevap: ayarGetir('oto_cevap', '1') === '1',
     hazirlik_dk: parseInt(ayarGetir('hazirlik_dk', '15'), 10) || 15,
     mesaj_sablonu: ayarGetir('mesaj_sablonu', '')
@@ -1256,7 +1393,7 @@ app.get('/api/ayarlar', (req, res) => {
 app.put('/api/ayarlar', rolGerekli('admin'), (req, res) => {
   try {
     const b = req.body || {};
-    const { birim_fiyat, urunler, isletme_adi, sahip_telefon, kritik_uyari, oto_cevap, hazirlik_dk, mesaj_sablonu } = b;
+    const { birim_fiyat, urunler, isletme_adi, sahip_telefon, kritik_uyari, stok_aktif, oto_cevap, hazirlik_dk, mesaj_sablonu } = b;
 
     if (birim_fiyat !== undefined) {
       const f = parseFloat(birim_fiyat);
@@ -1300,6 +1437,10 @@ app.put('/api/ayarlar', rolGerekli('admin'), (req, res) => {
       ayarKaydet('sahip_telefon', t);
     }
     if (kritik_uyari !== undefined) ayarKaydet('kritik_uyari', kritik_uyari ? '1' : '0');
+    if (stok_aktif !== undefined) {
+      ayarKaydet('stok_aktif', stok_aktif ? '1' : '0');
+      islemKaydet(kullaniciAdi(req), 'stok-durum', stok_aktif ? 'Stok takibi açıldı' : 'Stok takibi kapatıldı');
+    }
     if (oto_cevap !== undefined) ayarKaydet('oto_cevap', oto_cevap ? '1' : '0');
     if (hazirlik_dk !== undefined) {
       const h = parseInt(hazirlik_dk, 10);
@@ -1315,6 +1456,7 @@ app.put('/api/ayarlar', rolGerekli('admin'), (req, res) => {
       isletme_adi: ayarGetir('isletme_adi', 'Fırın'),
       sahip_telefon: ayarGetir('sahip_telefon', ''),
       kritik_uyari: ayarGetir('kritik_uyari', '1') === '1',
+      stok_aktif: stokAktif(),
       oto_cevap: ayarGetir('oto_cevap', '1') === '1',
       hazirlik_dk: parseInt(ayarGetir('hazirlik_dk', '15'), 10) || 15,
       mesaj_sablonu: ayarGetir('mesaj_sablonu', '')
@@ -1632,7 +1774,7 @@ app.get('/api/rapor/karlilik', rolGerekli('admin'), (req, res) => {
         maliyet_birim: maliyetBirim,
         maliyet,
         kar,
-        marj: u.ciro > 0 ? yuvarla((kar / u.ciro) * 100) : 0
+        marj: u.ciro > 0 ? Math.round((kar / u.ciro) * 1000) / 10 : 0
       };
     }).sort((a, b) => b.kar - a.kar);
     const toplam = liste.reduce(
@@ -1719,6 +1861,17 @@ app.get('/api/kasa/aylik', rolGerekli('admin'), (req, res) => {
   }
 });
 
+// Detaylı dönem raporu (kâr/zarar + tüm dökümler) — PDF ve CSV dışa aktarmanın kaynağı
+app.get('/api/rapor/detayli', rolGerekli('admin'), (req, res) => {
+  try {
+    const { baslangic, bitis } = tarihAraligi(req.query);
+    res.json(detayliRapor(baslangic, bitis));
+  } catch (err) {
+    console.error('Detaylı rapor hatası:', err);
+    res.status(500).json({ error: 'Detaylı rapor yüklenemedi.' });
+  }
+});
+
 // ─── CSV DIŞA AKTARMA ───────────────────────────────────────────────
 function csvHucre(deger) {
   const s = deger === null || deger === undefined ? '' : String(deger);
@@ -1747,21 +1900,78 @@ app.get('/api/disa-aktar/:tur', rolGerekli('admin'), (req, res) => {
           yuvarla((r.miktar || 0) * (r.birim_maliyet || 0))]);
       ad = 'stok';
     } else if (tur === 'karlilik') {
+      // Özet (kâr/zarar) + ürün bazlı döküm
       const { baslangic, bitis } = tarihAraligi(req.query);
-      basliklar = ['urun', 'adet', 'siparis', 'ciro', 'maliyet', 'kar', 'marj_%'];
-      satirlar = queryAll(`
-        SELECT urun_turu, COALESCE(SUM(adet),0) AS toplam_adet, COUNT(*) AS siparis_sayisi,
-               COALESCE(SUM(adet * COALESCE(birim_fiyat,0)),0) AS ciro
-        FROM siparisler WHERE durum='Tamamlandı' AND date(cikis_zamani) BETWEEN ? AND ?
-        GROUP BY urun_turu`, [baslangic, bitis])
-        .map((u) => {
-          const maliyetBirim = urunMaliyet(u.urun_turu);
-          const maliyet = yuvarla(maliyetBirim * (u.toplam_adet || 0));
-          const kar = yuvarla((u.ciro || 0) - maliyet);
-          return [u.urun_turu, u.toplam_adet, u.siparis_sayisi, u.ciro, maliyet, kar,
-            u.ciro > 0 ? yuvarla((kar / u.ciro) * 100) : 0];
-        });
-      ad = 'karlilik';
+      const r = detayliRapor(baslangic, bitis);
+      const o = r.ozet;
+      const satir = (...h) => h.map(csvHucre).join(';');
+      const parcalar = [];
+      parcalar.push(satir(`${r.isletme_adi} — KÂRLILIK RAPORU`));
+      parcalar.push(satir(`Dönem: ${baslangic} → ${bitis}`));
+      parcalar.push('');
+      parcalar.push(satir('Sipariş Sayısı', o.siparis_sayisi, 'Toplam Adet', o.toplam_adet));
+      parcalar.push(satir('Ciro', o.ciro, 'Tahsil Edilen', o.tahsil, 'Bekleyen', o.bekleyen));
+      parcalar.push(satir('Malzeme Maliyeti', o.malzeme_maliyeti, 'Brüt Kâr', o.brut_kar, 'Brüt Marj %', o.brut_marj));
+      parcalar.push(satir('Diğer Giderler', o.gider_diger, 'Toplam Gider', o.gider_toplam));
+      parcalar.push(satir('NET KÂR / ZARAR', o.net_kar, 'Net Marj %', o.net_marj));
+      parcalar.push('');
+      parcalar.push(satir('Ürün', 'Adet', 'Sipariş', 'Ciro', 'Tahsil', 'Maliyet', 'Kâr', 'Marj (%)'));
+      r.urunler.forEach((u) => parcalar.push(satir(u.urun_turu, u.adet, u.siparis, u.ciro, u.tahsil, u.maliyet, u.kar, u.marj)));
+      const csvKarlilik = '\uFEFF' + parcalar.join('\r\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="karlilik-${baslangic}_${bitis}.csv"`);
+      return res.send(csvKarlilik);
+    } else if (tur === 'detayli') {
+      // Kâr/zarar + tüm dökümleri içeren çok bölümlü detaylı rapor
+      const { baslangic, bitis } = tarihAraligi(req.query);
+      const r = detayliRapor(baslangic, bitis);
+      const o = r.ozet;
+      const satir = (...h) => h.map(csvHucre).join(';');
+      const bosluk = '';
+      const bolum = (b) => ['', satir(String(b).toUpperCase())].join('\r\n');
+      const parcalar = [];
+      parcalar.push(satir(`${r.isletme_adi} — DETAYLI RAPOR`));
+      parcalar.push(satir(`Dönem: ${r.baslangic} → ${r.bitis}`));
+      parcalar.push(satir(`Oluşturma: ${getLocalDateString()}`));
+      parcalar.push(bosluk);
+      parcalar.push(bolum('ÖZET (KÂR / ZARAR)'));
+      parcalar.push(satir('Alan', 'Değer'));
+      parcalar.push(satir('Sipariş Sayısı', o.siparis_sayisi));
+      parcalar.push(satir('Toplam Adet', o.toplam_adet));
+      parcalar.push(satir('Ciro (Satış)', o.ciro));
+      parcalar.push(satir('Tahsil Edilen', o.tahsil));
+      parcalar.push(satir('Bekleyen Ödeme', o.bekleyen));
+      parcalar.push(satir('Malzeme Maliyeti', o.malzeme_maliyeti));
+      parcalar.push(satir('Brüt Kâr', o.brut_kar));
+      parcalar.push(satir('Brüt Marj (%)', o.brut_marj));
+      parcalar.push(satir('Diğer Giderler', o.gider_diger));
+      parcalar.push(satir('Toplam Gider', o.gider_toplam));
+      parcalar.push(satir('NET KÂR / ZARAR', o.net_kar));
+      parcalar.push(satir('Net Marj (%)', o.net_marj));
+      parcalar.push(satir('Ortalama Sepet', o.ortalama_sepet));
+      parcalar.push(bolum('ÜRÜN BAZLI KÂRLILIK'));
+      parcalar.push(satir('Ürün', 'Adet', 'Sipariş', 'Ciro', 'Tahsil', 'Maliyet', 'Kâr', 'Marj (%)'));
+      r.urunler.forEach((u) => parcalar.push(satir(u.urun_turu, u.adet, u.siparis, u.ciro, u.tahsil, u.maliyet, u.kar, u.marj)));
+      parcalar.push(bolum('GİDERLER (KATEGORİ)'));
+      parcalar.push(satir('Kategori', 'Adet', 'Toplam'));
+      if (r.giderKategorileri.length) r.giderKategorileri.forEach((g) => parcalar.push(satir(g.kategori, g.adet, g.toplam)));
+      else parcalar.push(satir('(Kayıt yok)', '', ''));
+      parcalar.push(bolum('GÜN GÜN DÖKÜM'));
+      parcalar.push(satir('Tarih', 'Sipariş', 'Adet', 'Ciro', 'Tahsil', 'Gider'));
+      r.gunler.forEach((g) => parcalar.push(satir(g.gun, g.siparis, g.adet, g.ciro, g.tahsil, g.gider)));
+      parcalar.push(bolum('MÜŞTERİLER (ciroya göre)'));
+      parcalar.push(satir('Müşteri', 'Telefon', 'Sipariş', 'Adet', 'Ciro', 'Bekleyen'));
+      r.musteriler.forEach((m) => parcalar.push(satir(m.musteri_adi, m.telefon, m.siparis, m.adet, m.ciro, m.bekleyen)));
+      parcalar.push(bolum('SAATLİK YOĞUNLUK'));
+      parcalar.push(satir('Saat', 'Sipariş', 'Adet'));
+      r.saatlik.filter((s) => s.siparis > 0).forEach((s) => parcalar.push(satir(s.saat + ':00', s.siparis, s.adet)));
+      parcalar.push(bolum('TESLİM EDİLEN SİPARİŞLER'));
+      parcalar.push(satir('id', 'Müşteri', 'Telefon', 'Ürün', 'Adet', 'Birim Fiyat', 'Tutar', 'Ödeme', 'Çıkış'));
+      r.tamamlananlar.forEach((s) => parcalar.push(satir(s.id, s.musteri_adi, s.telefon, s.urun_turu, s.adet, s.birim_fiyat, s.tutar, s.odeme_durumu, s.cikis_zamani)));
+      const csvDetay = '\uFEFF' + parcalar.join('\r\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="detayli-rapor-${baslangic}_${bitis}.csv"`);
+      return res.send(csvDetay);
     } else {
       return res.status(400).json({ error: 'Geçersiz dışa aktarma türü.' });
     }

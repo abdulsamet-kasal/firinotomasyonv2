@@ -93,18 +93,19 @@ Sunucu dosyası backend'in tüm yönetimini üstlenir. 4 temel bölümden oluşu
 * `PUT /api/siparis/:id/odeme`: Siparişin ödeme durumunu (`Bekliyor` / `Ödendi`) günceller.
 * `GET /api/rapor/gunluk`: Bugün teslim edilen siparişleri, **ürün bazlı ciro**, tahsil edilen ve bekleyen ödeme tutarlarını yerel saat dilimine göre hesaplar.
 * `GET /api/rapor/aralik?baslangic=&bitis=`: İki tarih arası özet + gün gün döküm + ciro döner.
-* `GET /api/ayarlar` / `PUT /api/ayarlar`: Ürün listesini (isim + emoji + **birim fiyat**) okur/günceller.
+* `GET /api/ayarlar` / `PUT /api/ayarlar` *(v1.5/v1.6, **yönetici**)*: Ürün listesi (isim + emoji + **birim fiyat**) ve işletme ayarları (işletme adı, sahip telefonu, kritik uyarı, **stok takibi aç/kapat**, otomatik cevap robotu, hazırlık süresi, mesaj şablonu) okunur/güncellenir.
 * `DELETE /api/siparis/:id`: Hatalı girilen siparişi iptal eder/siler.
 * `GET /api/siparisler/tamamlanan?tarih=&q=` *(v1.3)*: Tamamlanmış siparişleri getirir. `q` verilirse **isim/telefon** ile tüm tarihlerde arar; verilmezse `tarih` (varsayılan bugün) listelenir.
 * `GET/POST /api/stok`, `PUT/DELETE /api/stok/:id`, `POST /api/stok/:id/hareket`, `GET /api/stok/hareketler` *(v1.3)*: Malzeme listesi, ekleme/güncelleme/silme, manuel stok giriş/çıkış ve hareket geçmişi.
 * `GET /api/recete`, `PUT /api/recete/:urun` *(v1.3)*: Ürün reçetesini okur/kaydeder (`kalemler: [{stok_id, miktar}]`).
 * `GET/POST /api/giderler`, `DELETE /api/giderler/:id` *(v1.3)*: Gider listesi/ekleme/silme.
 * `GET /api/kasa?baslangic=&bitis=` *(v1.3)*: Aralık için `gelir` (yalnızca "Ödendi"), `bekleyen`, `ciro`, `gider` ve `net` değerlerini döner.
+* `GET /api/rapor/detayli?baslangic=&bitis=` *(v1.6, **yönetici**)*: **Kâr/zarar özeti** + ürün kârlılığı, gider kategorileri, gün gün döküm, müşteriler, saatlik yoğunluk ve teslim edilen siparişler. Detaylı **PDF/CSV** raporunun kaynağı.
 * `GET /api/rapor/karlilik?baslangic=&bitis=` *(v1.5)*: Ürün bazlı **ciro, iç maliyet, brüt kâr ve marj** (`toplam` + `liste`). Maliyet, reçetedeki malzemelerin `birim_maliyet` değerlerinden hesaplanır.
 * `GET /api/rapor/musteriler?baslangic=&bitis=` *(v1.5)*: Müşteri bazlı sipariş sayısı, toplam adet, ciro ve bekleyen ödeme (en çok alışveriş yapanlar).
 * `GET /api/rapor/saatlik?baslangic=&bitis=` *(v1.5)*: Siparişlerin çıktığı saatlere göre yoğunluk dağılımı (00–23).
 * `GET /api/kasa/aylik?baslangic=&bitis=` *(v1.5)*: Gün gün gelir / ciro / gider / net (gelir–gider grafiği için).
-* `GET /api/disa-aktar/:tur` *(v1.5, **yönetici**)*: `siparisler`, `giderler`, `stok`, `karlilik` verilerini **UTF-8 BOM'lu, `;` ayraçlı CSV** olarak indirir (Excel ile Türkçe karakterler bozulmadan açılır).
+* `GET /api/disa-aktar/:tur` *(v1.5/v1.6, **yönetici**)*: `siparisler`, `giderler`, `stok`, `karlilik` ve **`detayli`** (`?baslangic=&bitis=`) verilerini **UTF-8 BOM'lu, `;` ayraçlı CSV** olarak indirir (Excel ile Türkçe karakterler bozulmadan açılır). `detayli`, çok bölümlü (özet + ürün + gider + gün + müşteri + saat + teslim) rapordur.
 * `GET /api/yedekler` *(v1.5, **yönetici**)*: `yedekler/` klasöründeki `.db` yedeklerini listeler.
 * `POST /api/yedek/al` *(v1.5, **yönetici**)*: O anki veritabanının anlık yedeğini alır.
 * `GET /api/yedek/indir?dosya=` *(v1.5, **yönetici**)*: Bir yedeği indirir (dizin dışına çıkma korumalı).
@@ -208,6 +209,22 @@ Sistem varsayılan olarak **sadece bu bilgisayardan** (`127.0.0.1`) erişilebili
 | `WA_DISABLE` | `1` yapılırsa WhatsApp hiç başlatılmaz (yalnızca test/geliştirme) | *(boş)* |
 
 > **Not:** `HOST=0.0.0.0` yapıp tablet/telefonla bağlanacaksanız **mutlaka** `APP_PASSWORD` belirleyin. Aksi halde aynı ağdaki herkes müşteri verilerinizi görebilir.
+
+---
+
+## ✨ v1.6 Yenilikleri
+
+- 🧰 **Stok takibi aç/kapat (isteğe bağlı)**: **Ayarlar → Stok takibi** ile stok/reçete modülünü tamamen açıp kapatabilirsiniz. **Kapalıyken**: Stok/Reçete sekmeleri gizlenir, sipariş tamamlanırken **malzeme düşümü ve kritik stok uyarısı yapılmaz**, kârlılık raporlarında maliyet **0** kabul edilir ve **tüm giderler** net kâra dahil edilir. **Açıkken** (varsayılan) sistem eskisi gibi çalışır.
+- 📄 **Detaylı Kâr/Zarar raporu (PDF + CSV)**: Kârlılık ve Kasa sekmelerindeki **"📄 Detaylı PDF"** ve **"⬇️ Detaylı Rapor (CSV)"** butonları, seçili dönem için **çok bölümlü** rapor üretir:
+  - **Özet (Kâr/Zarar)**: ciro, tahsil edilen, bekleyen ödeme, ortalama sepet, malzeme maliyeti, brüt kâr + marj, diğer giderler, toplam gider, **net kâr/zarar + net marj**.
+  - **Ürün bazlı kârlılık** (adet, sipariş, ciro, tahsil, maliyet, kâr, marj).
+  - **Giderler (kategori bazlı)**, **gün gün döküm**, **müşteriler** (bekleyen ödeme dahil), **saatlik yoğunluk** ve **teslim edilen siparişler** (satır satır).
+- 🧮 **Kârlılık sekmesi zenginleştirildi**: Brüt kâr/marjın yanına **tahsil edilen, bekleyen ödeme, diğer giderler, toplam gider, net kâr/zarar, net marj, ortalama sepet** kartları eklendi (maliyet kartı stok takibi kapalıysa 0 görünür ve uyarı çıkar).
+- 📑 **Kârlılık CSV'si detaylandırıldı**: Artık **özet (kâr/zarar)** satırları + ürün dökümü birlikte gelir.
+
+**Kâr hesabı nasıl yapılır?**
+- **Brüt kâr** = ciro − (reçeteden hesaplanan malzeme maliyeti)
+- **Net kâr** = brüt kâr − **diğer giderler**. Stok takibi **açıkken** malzeme alımları maliyet olarak zaten sayıldığı için **"Malzeme Alımı"** kategorisi diğer giderlerden **hariç tutulur** (çift sayım önlenir). Stok takibi **kapalıyken** malzeme maliyeti hesaplanmadığından **tüm giderler** net kâra dahil edilir.
 
 ---
 

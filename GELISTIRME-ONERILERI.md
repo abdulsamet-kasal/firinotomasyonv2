@@ -3,9 +3,11 @@
 Bu rapor; mevcut sisteme (sipariş takibi + WhatsApp bildirimi + stok/reçete + kasa) eklenebilecek,
 işe en çok yarayacak özellikleri öncelik sırasına göre listeler.
 
-> Durum işaretleri: ✅ **v1.5'te uygulandı** · ⏳ **ertelendi** (gerekçe yazılı) · ⭐ = öncelik.
+> Durum işaretleri: ✅ **uygulandı** (v1.5 / v1.6) · ⏳ **ertelendi** (gerekçe yazılı) · ⭐ = öncelik.
 
-**Durum özeti:** Aşağıdaki 24 maddenin **16'sı uygulandı**, 8'i gerekçesiyle ertelendi.
+**Durum özeti:** Aşağıdaki 26 maddenin **19'u uygulandı**, 7'si gerekçesiyle ertelendi.
+
+> **v1.6 notu (kullanıcı geri bildirimi):** İki ekleme yapıldı — **stok takibini aç/kapat** (isteğe bağlı modül; 2.7) ve **detaylı kâr/zarar raporu, PDF + CSV** (3.6).
 
 ---
 
@@ -30,16 +32,18 @@ işe en çok yarayacak özellikleri öncelik sırasına göre listeler.
 | 2.4 | **Fire / zayi takibi** | ✅ Uygulandı | 🔥 butonuyla stoktan **fire** düşülür; hareket geçmişinde ayrı görünür. | Kolay |
 | 2.5 | **Envanter (sayım) modu** | ⏳ Ertelendi | Belirli günde sayım + fark raporu. (Yapısal; sıradaki sürüm.) | Orta |
 | 2.6 | **Tedarikçi kaydı** | ✅ Uygulandı (temel) | Stok kartına **tedarikçi** alanı. (Fiyat geçmişi/ayrı tedarikçi defteri sıradaki sürümde.) | Orta |
+| 2.7 | ⭐ **Stok takibini aç/kapat (isteğe bağlı modül)** | ✅ Uygulandı *(v1.6)* | İşletme stok tutmak istemiyorsa **Ayarlar → Stok takibi** ile kapatır: Stok/Reçete sekmeleri gizlenir, malzeme düşümü ve kritik uyarı durur; kârlılıkta maliyet 0, net kâr = ciro − tüm giderler. | Kolay |
 
 ## 3) Finans / Kasa
 
 | # | Özellik | Durum | Neden gerekli? | Zorluk |
 | :-- | :--- | :--- | :--- | :--- |
 | 3.1 | ⭐ **Aylık gelir-gider grafiği** | ✅ Uygulandı | Kasa sekmesinde **gün gün gelir/gider** sütun grafiği. | Kolay-Orta |
-| 3.2 | ⭐ **Excel/CSV dışa aktarma** | ✅ Uygulandı | Siparişler, giderler, stok ve kârlılık **CSV** (Türkçe Excel uyumlu) indirilebilir. | Kolay |
+| 3.2 | ⭐ **Excel/CSV dışa aktarma** | ✅ Uygulandı | Siparişler, giderler, stok ve kârlılık **CSV** (Türkçe Excel uyumlu). *(v1.6)* Ayrıca **çok bölümlü detaylı rapor CSV'si** (özet + ürün + gider + gün + müşteri + saat + teslim). | Kolay |
 | 3.3 | **Personel/yevmiye takibi** | ⏳ Ertelendi | Yevmiye/gün takibi ve otomatik gider. (Kullanıcı rolleri geldi; yevmiye ayrı iş.) | Orta |
-| 3.4 | **Kâr/zarar (P&L) özeti** | ✅ Uygulandı | Kârlılık sekmesi ciro − malzeme maliyeti = brüt kâr ve marj verir. (Sabit giderleri düşen net P&L sıradaki sürümde.) | Orta |
+| 3.4 | **Kâr/zarar (P&L) özeti** | ✅ Uygulandı *(v1.6)* | Kârlılık sekmesi ciro − malzeme maliyeti = **brüt kâr**; ayrıca **– diğer giderler = NET kâr/zarar** (marj ile). Sabit giderler dahil gerçek P&L. | Orta |
 | 3.5 | **Bekleyen ödeme hatırlatma** | ⏳ Ertelendi | Gün sonu ödenmemişler hatırlatması. (Otomatik cevap robotu "ödenmemiş sipariş" bilgisini şimdiden verir.) | Kolay |
+| 3.6 | ⭐ **Detaylı kâr/zarar raporu (PDF + CSV)** | ✅ Uygulandı *(v1.6)* | Kârlılık/Kasa sekmelerinden **📄 Detaylı PDF** ve **⬇️ Detaylı Rapor (CSV)**: özet (kâr/zarar), ürün kârlılığı, gider kategorileri, gün gün döküm, müşteriler, saatlik yoğunluk ve teslim edilen siparişler. | Orta |
 
 ## 4) Raporlama
 

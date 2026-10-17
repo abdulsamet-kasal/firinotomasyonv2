@@ -46,6 +46,12 @@ function girisEkraniGizle() {
 // Aktif kullanıcının rolü (personel ise finans/ayar bölümleri gizlenir)
 let ROL = 'admin';
 
+// Stok takibi açık mı? (ayarlardan kapatılabilir; varsayılan: açık)
+function stokAktifMi() {
+  return AYARLAR.stok_aktif !== false;
+}
+
+// Rol + stok ayarına göre sekmeleri/bölümleri göster-gizle
 function uygulaRol() {
   const adminMi = ROL === 'admin';
   ['tab-kasa', 'tab-karlilik'].forEach((id) => {
@@ -56,8 +62,19 @@ function uygulaRol() {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('hidden', !adminMi);
   });
+
+  // Stok takibi kapalıysa stok sekmesini ve ilgili öğeleri gizle
+  const stokVar = stokAktifMi();
+  const tabStok = document.getElementById('tab-stok');
+  if (tabStok) tabStok.classList.toggle('hidden', !stokVar);
+  const stokCsvBtn = document.getElementById('btn-stok-csv');
+  if (stokCsvBtn) stokCsvBtn.classList.toggle('hidden', !stokVar);
+  const stokKapaliNot = document.getElementById('kar-uyari-stok-kapali');
+  if (stokKapaliNot) stokKapaliNot.classList.toggle('hidden', stokVar);
+
   const aktif = document.querySelector('main > div:not(.hidden)');
   if (!adminMi && aktif && ['panel-kasa', 'panel-karlilik'].includes(aktif.id)) switchTab('main');
+  if (!stokVar && aktif && aktif.id === 'panel-stok') switchTab('main');
 }
 
 async function girisYap() {
@@ -259,6 +276,7 @@ async function ayarlariYukle() {
     if (typeof data.birim_fiyat === 'number') BIRIM_FIYAT = data.birim_fiyat;
     if (Array.isArray(data.urunler) && data.urunler.length > 0) URUNLER = data.urunler;
     urunHaritasiniKur();
+    uygulaRol();
   } catch (err) {
     if (err.message !== 'UNAUTHORIZED') console.error('Ayarlar yüklenemedi:', err);
   }
@@ -322,6 +340,8 @@ function ayarModalAc() {
   set('ayar-mesaj-sablonu', AYARLAR.mesaj_sablonu || '');
   const kritik = document.getElementById('ayar-kritik-uyari');
   if (kritik) kritik.checked = AYARLAR.kritik_uyari !== false;
+  const stokChk = document.getElementById('ayar-stok-aktif');
+  if (stokChk) stokChk.checked = AYARLAR.stok_aktif !== false;
   const oto = document.getElementById('ayar-oto-cevap');
   if (oto) oto.checked = AYARLAR.oto_cevap !== false;
 
@@ -412,6 +432,7 @@ async function ayarlariKaydet() {
         sahip_telefon: document.getElementById('ayar-sahip-telefon').value.trim(),
         hazirlik_dk: parseInt(document.getElementById('ayar-hazirlik-dk').value, 10) || 15,
         kritik_uyari: document.getElementById('ayar-kritik-uyari').checked,
+        stok_aktif: document.getElementById('ayar-stok-aktif').checked,
         oto_cevap: document.getElementById('ayar-oto-cevap').checked,
         mesaj_sablonu: document.getElementById('ayar-mesaj-sablonu').value
       })
@@ -423,6 +444,7 @@ async function ayarlariKaydet() {
       URUNLER = data.urunler;
       urunHaritasiniKur();
       urunSecenekleriniDoldur();
+      uygulaRol();
       ayarModalKapat();
       showToast('Ayarlar kaydedildi. ✅', 'success');
       aktifSiparisleriYukle();
@@ -584,6 +606,7 @@ updateClock();
 
 // ─── TAB SİSTEMİ ────────────────────────────────────────────────────
 function switchTab(tab) {
+  if (tab === 'stok' && !stokAktifMi()) return;
   ['main', 'report', 'stok', 'kasa', 'karlilik'].forEach(t => {
     const panel = document.getElementById(`panel-${t}`);
     const btn = document.getElementById(`tab-${t}`);
@@ -1740,25 +1763,36 @@ async function karlilikYukle() {
   }
   const baslangic = bEl.value, bitis = sEl.value;
   try {
-    const [karRes, musRes, saatRes] = await Promise.all([
-      apiFetch(`${API_BASE}/api/rapor/karlilik?baslangic=${baslangic}&bitis=${bitis}`),
-      apiFetch(`${API_BASE}/api/rapor/musteriler?baslangic=${baslangic}&bitis=${bitis}`),
-      apiFetch(`${API_BASE}/api/rapor/saatlik?baslangic=${baslangic}&bitis=${bitis}`)
-    ]);
-    const kar = await karRes.json();
-    const mus = await musRes.json();
-    const saat = await saatRes.json();
+    const res = await apiFetch(`${API_BASE}/api/rapor/detayli?baslangic=${baslangic}&bitis=${bitis}`);
+    const r = await res.json();
+    if (r.error) { showToast(r.error, 'error'); return; }
+    const o = r.ozet || {};
 
-    document.getElementById('karlilik-tarih').textContent = `${kar.baslangic} → ${kar.bitis} arası`;
-    document.getElementById('kar-ciro').textContent = fmtPara(kar.toplam?.ciro || 0);
-    document.getElementById('kar-maliyet').textContent = fmtPara(kar.toplam?.maliyet || 0);
+    document.getElementById('karlilik-tarih').textContent = `${r.baslangic} → ${r.bitis} arası`;
+    document.getElementById('kar-ciro').textContent = fmtPara(o.ciro || 0);
+    document.getElementById('kar-maliyet').textContent = fmtPara(o.malzeme_maliyeti || 0);
     const karEl = document.getElementById('kar-kar');
-    karEl.textContent = fmtPara(kar.toplam?.kar || 0);
-    karEl.className = 'text-3xl font-black ' + ((kar.toplam?.kar || 0) >= 0 ? 'text-emerald-400' : 'text-red-400');
-    document.getElementById('kar-marj').textContent = `${kar.toplam?.marj || 0}%`;
+    karEl.textContent = fmtPara(o.brut_kar || 0);
+    karEl.className = 'text-3xl font-black ' + ((o.brut_kar || 0) >= 0 ? 'text-emerald-400' : 'text-red-400');
+    document.getElementById('kar-marj').textContent = `${o.brut_marj || 0}%`;
+
+    // İkinci satır: gider, net kâr, bekleyen, ortalama sepet, sipariş/adet
+    const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setTxt('kar-gider', fmtPara(o.gider_diger || 0));
+    setTxt('kar-gider-toplam', `Toplam gider: ${fmtPara(o.gider_toplam || 0)}`);
+    const netEl = document.getElementById('kar-net');
+    if (netEl) {
+      netEl.textContent = fmtPara(o.net_kar || 0);
+      netEl.className = 'text-3xl font-black ' + ((o.net_kar || 0) >= 0 ? 'text-emerald-400' : 'text-red-400');
+    }
+    setTxt('kar-net-marj', `Net marj: ${o.net_marj || 0}%`);
+    setTxt('kar-bekleyen', fmtPara(o.bekleyen || 0));
+    setTxt('kar-ortalama-sepet', fmtPara(o.ortalama_sepet || 0));
+    setTxt('kar-siparis-adet', `${o.siparis_sayisi || 0} sipariş • ${o.toplam_adet || 0} adet`);
+    setTxt('kar-tahsil', fmtPara(o.tahsil || 0));
 
     const urunEl = document.getElementById('kar-urun-list');
-    const liste = kar.liste || [];
+    const liste = r.urunler || [];
     urunEl.innerHTML = liste.length ? liste.map((u) => {
       const karPozitif = (u.kar || 0) >= 0;
       return `
@@ -1768,7 +1802,7 @@ async function karlilikYukle() {
             <span class="${karPozitif ? 'text-emerald-400' : 'text-red-400'} font-bold text-sm">${fmtPara(u.kar)}</span>
           </div>
           <div class="grid grid-cols-4 gap-1 text-[11px] text-dark-400">
-            <span>Adet: <b class="text-gray-300">${u.toplam_adet}</b></span>
+            <span>Adet: <b class="text-gray-300">${u.adet}</b></span>
             <span>Ciro: <b class="text-fire-400">${u.ciro}</b></span>
             <span>Maliyet: <b class="text-amber-400">${u.maliyet}</b></span>
             <span>Marj: <b class="text-gray-300">${u.marj}%</b></span>
@@ -1777,14 +1811,14 @@ async function karlilikYukle() {
     }).join('') : '<p class="text-dark-500 text-center py-4">Bu aralıkta satış yok.</p>';
 
     const musEl = document.getElementById('kar-musteri-list');
-    const mliste = mus.liste || [];
+    const mliste = r.musteriler || [];
     musEl.innerHTML = mliste.length ? mliste.map((m, i) => `
       <div class="flex items-center justify-between bg-dark-800/50 rounded-xl px-3.5 py-2.5">
         <div class="flex items-center gap-2 min-w-0">
           <span class="text-dark-500 text-xs w-5">${i + 1}.</span>
           <div class="min-w-0">
             <div class="font-semibold text-gray-200 text-sm truncate">${escapeHtml(m.musteri_adi)}</div>
-            <div class="text-dark-500 text-[11px]">${escapeHtml(formatTelefon(m.telefon))} • ${m.siparis_sayisi} sipariş • ${m.toplam_adet} adet</div>
+            <div class="text-dark-500 text-[11px]">${escapeHtml(formatTelefon(m.telefon))} • ${m.siparis} sipariş • ${m.adet} adet</div>
           </div>
         </div>
         <div class="text-right flex-shrink-0">
@@ -1794,15 +1828,17 @@ async function karlilikYukle() {
       </div>`).join('') : '<p class="text-dark-500 text-center py-4">Bu aralıkta müşteri yok.</p>';
 
     const saatEl = document.getElementById('kar-saatlik');
-    const sliste = (saat.liste || []).filter((s) => s.toplam_adet > 0);
+    const sliste = (r.saatlik || [])
+      .map((s) => ({ saat: s.saat, adet: s.adet || 0, siparis: s.siparis || 0 }))
+      .filter((s) => s.adet > 0);
     if (sliste.length === 0) {
       saatEl.innerHTML = '<p class="text-dark-500 text-sm m-auto">Bu aralıkta veri yok.</p>';
     } else {
-      const maxA = Math.max(1, ...sliste.map((s) => s.toplam_adet || 0));
+      const maxA = Math.max(1, ...sliste.map((s) => s.adet));
       saatEl.innerHTML = sliste.map((s) => {
-        const h = Math.round(((s.toplam_adet || 0) / maxA) * 100);
+        const h = Math.round((s.adet / maxA) * 100);
         return `
-          <div class="flex flex-col items-center gap-1 min-w-[26px]" title="${s.saat}:00 • ${s.toplam_adet} adet / ${s.siparis_sayisi} sipariş">
+          <div class="flex flex-col items-center gap-1 min-w-[26px]" title="${s.saat}:00 • ${s.adet} adet / ${s.siparis} sipariş">
             <div class="w-5 bg-gradient-to-t from-fire-600 to-fire-400 rounded-t" style="height:${h}%;min-height:3px"></div>
             <span class="text-dark-500 text-[10px]">${s.saat}</span>
           </div>`;
@@ -1824,8 +1860,167 @@ function karlilikHizli(tip) {
 
 // ─── CSV / DIŞA AKTARMA ─────────────────────────────────────────────
 function csvIndir(tur) {
-  window.open(`${API_BASE}/api/disa-aktar/${tur}`, '_blank');
-  showToast('CSV indiriliyor... (Excel ile açabilirsiniz) 📊', 'info');
+  let url = `${API_BASE}/api/disa-aktar/${tur}`;
+  // Kârlılık / detaylı raporlarda Kârlılık sekmesindeki seçili tarih aralığını kullan
+  if (tur === 'karlilik' || tur === 'detayli') {
+    const b = document.getElementById('karlilik-baslangic');
+    const s = document.getElementById('karlilik-bitis');
+    if (b && s && b.value && s.value) url += `?baslangic=${b.value}&bitis=${s.value}`;
+  }
+  window.open(url, '_blank');
+  showToast(tur === 'detayli'
+    ? 'Detaylı rapor (CSV) indiriliyor... Excel ile açabilirsiniz 📊'
+    : 'CSV indiriliyor... (Excel ile açabilirsiniz) 📊', 'info');
+}
+
+// Ekrandaki tarih aralığını oku ("karlilik" | "kasa")
+function donemAraligi(prefix) {
+  const b = document.getElementById(prefix + '-baslangic');
+  const s = document.getElementById(prefix + '-bitis');
+  const t = localDateStr();
+  return {
+    baslangic: (b && b.value) || t.slice(0, 8) + '01',
+    bitis: (s && s.value) || t
+  };
+}
+
+// Detaylı raporu CSV olarak indir (seçili dönem)
+function detayliCsvIndir(prefix) {
+  const { baslangic, bitis } = donemAraligi(prefix || 'karlilik');
+  window.open(`${API_BASE}/api/disa-aktar/detayli?baslangic=${baslangic}&bitis=${bitis}`, '_blank');
+  showToast('Detaylı rapor (CSV) indiriliyor... Excel ile açabilirsiniz 📊', 'info');
+}
+
+// ─── DETAYLI PDF RAPORU ─────────────────────────────────────────────
+async function detayliPdfIndir(prefix) {
+  const { baslangic, bitis } = donemAraligi(prefix || 'karlilik');
+  try {
+    const res = await apiFetch(`${API_BASE}/api/rapor/detayli?baslangic=${baslangic}&bitis=${bitis}`);
+    const r = await res.json();
+    if (r.error) { showToast(r.error, 'error'); return; }
+    detayliPdfOlustur(r);
+  } catch (err) {
+    if (err.message !== 'UNAUTHORIZED') showToast('PDF oluşturulamadı!', 'error');
+  }
+}
+
+function detayliPdfOlustur(r) {
+  const o = r.ozet || {};
+  const tl = (n) => fmtPara(n || 0);
+  const th = (t) => ({ text: t, style: 'tH' });
+  const bos = (t) => ({ text: t, italics: true, color: '#999', fontSize: 10, margin: [0, 6, 0, 6] });
+
+  // Özet tablosu (kâr / zarar)
+  const ozetBody = [
+    [{ text: 'Sipariş Sayısı', style: 'ozL' }, { text: String(o.siparis_sayisi || 0), style: 'ozV' },
+     { text: 'Toplam Adet', style: 'ozL' }, { text: String(o.toplam_adet || 0), style: 'ozV' }],
+    [{ text: 'Ciro (Satış)', style: 'ozL' }, { text: tl(o.ciro), style: 'ozV' },
+     { text: 'Tahsil Edilen', style: 'ozL' }, { text: tl(o.tahsil), style: 'ozV' }],
+    [{ text: 'Bekleyen Ödeme', style: 'ozL' }, { text: tl(o.bekleyen), style: 'ozV' },
+     { text: 'Ortalama Sepet', style: 'ozL' }, { text: tl(o.ortalama_sepet), style: 'ozV' }],
+    [{ text: 'Malzeme Maliyeti', style: 'ozL' }, { text: tl(o.malzeme_maliyeti), style: 'ozV' },
+     { text: 'Brüt Kâr', style: 'ozL' }, { text: `${tl(o.brut_kar)}  (%${o.brut_marj || 0})`, style: 'ozV' }],
+    [{ text: 'Diğer Giderler', style: 'ozL' }, { text: tl(o.gider_diger), style: 'ozV' },
+     { text: 'Toplam Gider', style: 'ozL' }, { text: tl(o.gider_toplam), style: 'ozV' }],
+    [{ text: 'NET KÂR / ZARAR', style: 'ozLb' }, { text: tl(o.net_kar), style: 'ozVb' },
+     { text: 'Net Marj', style: 'ozLb' }, { text: `%${o.net_marj || 0}`, style: 'ozVb' }]
+  ];
+
+  const urunBody = [[th('Ürün'), th('Adet'), th('Sipariş'), th('Ciro'), th('Tahsil'), th('Maliyet'), th('Kâr'), th('Marj')]];
+  (r.urunler || []).forEach((u) => urunBody.push([
+    u.urun_turu, String(u.adet), String(u.siparis), tl(u.ciro), tl(u.tahsil), tl(u.maliyet),
+    { text: tl(u.kar), color: (u.kar || 0) >= 0 ? '#2e7d32' : '#c62828', bold: true },
+    `%${u.marj}`
+  ]));
+
+  const giderBody = [[th('Kategori'), th('Adet'), th('Toplam')]];
+  (r.giderKategorileri || []).forEach((g) => giderBody.push([g.kategori, String(g.adet), tl(g.toplam)]));
+  giderBody.push([
+    { text: 'TOPLAM', bold: true, fillColor: '#fff3e0' }, { text: '', fillColor: '#fff3e0' },
+    { text: tl(o.gider_toplam), bold: true, fillColor: '#fff3e0' }
+  ]);
+
+  const gunBody = [[th('Tarih'), th('Sipariş'), th('Adet'), th('Ciro'), th('Tahsil'), th('Gider')]];
+  (r.gunler || []).forEach((g) => gunBody.push([g.gun, String(g.siparis), String(g.adet), tl(g.ciro), tl(g.tahsil), tl(g.gider)]));
+
+  const musBody = [[th('Müşteri'), th('Telefon'), th('Sipariş'), th('Adet'), th('Ciro'), th('Bekleyen')]];
+  (r.musteriler || []).forEach((m) => musBody.push([m.musteri_adi, formatTelefon(m.telefon), String(m.siparis), String(m.adet), tl(m.ciro), tl(m.bekleyen)]));
+
+  const saatAktif = (r.saatlik || []).filter((s) => (s.adet || 0) > 0);
+  const saatBody = [[th('Saat'), th('Sipariş'), th('Adet')]];
+  saatAktif.forEach((s) => saatBody.push([`${s.saat}:00`, String(s.siparis), String(s.adet)]));
+
+  const tesBody = [[th('#'), th('Müşteri'), th('Ürün'), th('Adet'), th('Tutar'), th('Ödeme'), th('Çıkış')]];
+  (r.tamamlananlar || []).forEach((s, i) => tesBody.push([
+    String(i + 1), s.musteri_adi, s.urun_turu, String(s.adet), tl(s.tutar),
+    s.odeme_durumu === 'Ödendi' ? 'Ödendi' : 'Bekliyor', (s.cikis_zamani || '').slice(11, 16)
+  ]));
+
+  const tabloLayout = {
+    hLineWidth: () => 0.5, vLineWidth: () => 0.5,
+    hLineColor: () => '#e0e0e0', vLineColor: () => '#e0e0e0',
+    fillColor: (row) => row === 0 ? '#e65100' : (row % 2 === 0 ? '#fafafa' : null)
+  };
+  const tablo = (widths, body) => ({ table: { headerRows: 1, widths, body }, layout: tabloLayout });
+
+  const docDefinition = {
+    pageSize: 'A4',
+    pageMargins: [40, 60, 40, 60],
+    header: { columns: [
+      { text: (r.isletme_adi || 'Fırın').toUpperCase(), style: 'headerLeft', margin: [40, 20, 0, 0] },
+      { text: 'Detaylı Kâr/Zarar Raporu', style: 'headerRight', margin: [0, 20, 40, 0] }
+    ] },
+    footer: function (p, c) { return { columns: [
+      { text: 'Emanet Takip Sistemi — Detaylı Rapor', style: 'footerText', margin: [40, 0, 0, 0] },
+      { text: `Sayfa ${p} / ${c}`, style: 'footerPage', margin: [0, 0, 40, 0] }
+    ] }; },
+    content: [
+      { text: 'DETAYLI KÂR / ZARAR RAPORU', style: 'title', margin: [0, 0, 0, 4] },
+      { text: `Dönem: ${r.baslangic} → ${r.bitis}    •    Oluşturma: ${new Date().toLocaleString('tr-TR')}`, style: 'subtitle', margin: [0, 0, 0, 16] },
+      { text: 'Özet', style: 'sectionTitle', margin: [0, 0, 0, 8] },
+      { table: { widths: ['auto', '*', 'auto', '*'], body: ozetBody }, layout: 'lightHorizontalLines', margin: [0, 0, 0, 6] },
+      r.stok_aktif
+        ? { text: 'Malzeme maliyeti, reçetedeki güncel malzeme alış fiyatlarından hesaplanır.', style: 'dipnot' }
+        : { text: 'Stok takibi kapalı: malzeme maliyeti hesaplanmaz, tüm giderler net kâra dahil edilir.', style: 'dipnot' },
+
+      { text: 'Ürün Bazlı Kârlılık', style: 'sectionTitle', margin: [0, 16, 0, 8] },
+      (r.urunler || []).length ? tablo(['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'], urunBody) : bos('Bu dönemde satış kaydı yok.'),
+
+      { text: 'Giderler (Kategori)', style: 'sectionTitle', margin: [0, 16, 0, 8] },
+      (r.giderKategorileri || []).length ? tablo(['*', 'auto', 'auto'], giderBody) : bos('Bu dönemde gider kaydı yok.'),
+
+      { text: 'Gün Gün Döküm', style: 'sectionTitle', margin: [0, 16, 0, 8] },
+      (r.gunler || []).length ? tablo(['auto', 'auto', 'auto', 'auto', 'auto', 'auto'], gunBody) : bos('Bu dönemde satış kaydı yok.'),
+
+      { text: 'Müşteriler (ciroya göre)', style: 'sectionTitle', margin: [0, 16, 0, 8] },
+      (r.musteriler || []).length ? tablo(['*', 'auto', 'auto', 'auto', 'auto', 'auto'], musBody) : bos('Bu dönemde müşteri kaydı yok.'),
+
+      { text: 'Saatlik Yoğunluk', style: 'sectionTitle', margin: [0, 16, 0, 8] },
+      saatAktif.length ? tablo(['auto', 'auto', 'auto'], saatBody) : bos('Bu dönemde veri yok.'),
+
+      { text: 'Teslim Edilen Siparişler', style: 'sectionTitle', margin: [0, 16, 0, 8] },
+      (r.tamamlananlar || []).length ? tablo(['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'], tesBody) : bos('Bu dönemde teslim edilen sipariş yok.')
+    ],
+    styles: {
+      headerLeft: { fontSize: 8, color: '#888', font: 'Roboto' },
+      headerRight: { fontSize: 8, color: '#888', alignment: 'right', font: 'Roboto' },
+      footerText: { fontSize: 7, color: '#aaa', font: 'Roboto' },
+      footerPage: { fontSize: 7, color: '#aaa', alignment: 'right', font: 'Roboto' },
+      title: { fontSize: 20, bold: true, color: '#e65100', font: 'Roboto' },
+      subtitle: { fontSize: 10, color: '#888', font: 'Roboto' },
+      sectionTitle: { fontSize: 13, bold: true, color: '#333', font: 'Roboto' },
+      tH: { fontSize: 9, bold: true, color: '#fff', fillColor: '#e65100', margin: [4, 5, 4, 5], font: 'Roboto' },
+      ozL: { fontSize: 9.5, color: '#666', margin: [6, 4, 6, 4], font: 'Roboto' },
+      ozV: { fontSize: 10.5, bold: true, color: '#222', margin: [6, 4, 6, 4], font: 'Roboto' },
+      ozLb: { fontSize: 10, bold: true, color: '#e65100', margin: [6, 5, 6, 5], font: 'Roboto' },
+      ozVb: { fontSize: 12, bold: true, color: '#e65100', margin: [6, 5, 6, 5], font: 'Roboto' },
+      dipnot: { fontSize: 8, color: '#999', italics: true, font: 'Roboto' }
+    },
+    defaultStyle: { fontSize: 9, color: '#333', font: 'Roboto' }
+  };
+
+  pdfMake.createPdf(docDefinition).download(`detayli-rapor-${r.baslangic}_${r.bitis}.pdf`);
+  showToast('Detaylı PDF raporu indiriliyor... 📄', 'success');
 }
 
 // ─── YEDEK YÖNETİMİ ─────────────────────────────────────────────────

@@ -566,7 +566,9 @@
             <p id="kasa-tarih" class="text-dark-400 text-sm"></p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap justify-end">
+          <button onclick="detayliPdfIndir('kasa')" class="btn-press px-3 py-2 bg-gradient-to-r from-fire-600 to-fire-700 hover:from-fire-500 hover:to-fire-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-fire-600/20" title="Kâr/zarar detaylı PDF raporu">📄 Detaylı PDF</button>
+          <button onclick="detayliCsvIndir('kasa')" class="btn-press px-3 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl" title="Kâr/zarar detaylı CSV raporu">⬇️ Detaylı (CSV)</button>
           <button onclick="csvIndir('giderler')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl" title="Giderleri Excel/CSV indir">⬇️ Giderler (CSV)</button>
           <button onclick="csvIndir('siparisler')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl" title="Siparişleri Excel/CSV indir">⬇️ Siparişler (CSV)</button>
           <button onclick="kasaYukle()" class="text-dark-400 hover:text-fire-400 transition-colors p-2 rounded-lg hover:bg-dark-800" title="Yenile">
@@ -652,8 +654,10 @@
           </div>
         </div>
         <div class="flex items-center gap-2 flex-wrap">
+          <button onclick="detayliPdfIndir('karlilik')" class="btn-press px-3 py-2 bg-gradient-to-r from-fire-600 to-fire-700 hover:from-fire-500 hover:to-fire-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-fire-600/20">📄 Detaylı PDF</button>
+          <button onclick="detayliCsvIndir('karlilik')" class="btn-press px-3 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl">⬇️ Detaylı Rapor (CSV)</button>
           <button onclick="csvIndir('karlilik')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl">⬇️ Kârlılık (CSV)</button>
-          <button onclick="csvIndir('stok')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl">⬇️ Stok (CSV)</button>
+          <button id="btn-stok-csv" onclick="csvIndir('stok')" class="btn-press px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700/50 text-dark-300 text-xs font-semibold rounded-xl">⬇️ Stok (CSV)</button>
         </div>
       </div>
 
@@ -667,7 +671,11 @@
         <button onclick="karlilikYukle()" class="btn-press px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 font-semibold rounded-lg text-sm transition-all">Getir</button>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div id="kar-uyari-stok-kapali" class="hidden mb-4 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-amber-300 text-sm">
+        ⚠️ Stok takibi kapalı olduğu için ürün maliyeti ve brüt kâr hesaplanmıyor. Raporlarda yalnızca ciro ve giderler yer alır. Açmak için: <b>Ayarlar → Stok takibi</b>.
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
         <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-5 text-center">
           <div class="text-3xl font-black text-fire-400" id="kar-ciro">0 ₺</div>
           <div class="text-dark-400 text-sm font-semibold mt-1">Ciro</div>
@@ -683,6 +691,35 @@
         <div class="bg-gradient-to-br from-fire-600/20 to-fire-700/10 rounded-2xl border border-fire-500/30 p-5 text-center">
           <div class="text-3xl font-black text-fire-300" id="kar-marj">0%</div>
           <div class="text-fire-400/70 text-sm font-semibold mt-1">Kâr Marjı</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-4 text-center">
+          <div class="text-2xl font-black text-fire-400" id="kar-tahsil">0 ₺</div>
+          <div class="text-dark-400 text-xs font-semibold mt-1">Tahsil Edilen</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-4 text-center">
+          <div class="text-2xl font-black text-amber-400" id="kar-bekleyen">0 ₺</div>
+          <div class="text-dark-400 text-xs font-semibold mt-1">Bekleyen Ödeme</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-4 text-center">
+          <div class="text-2xl font-black text-rose-400" id="kar-gider">0 ₺</div>
+          <div class="text-dark-400 text-xs font-semibold mt-1">Diğer Giderler</div>
+          <div class="text-dark-500 text-[10px] mt-0.5" id="kar-gider-toplam">Toplam gider: 0 ₺</div>
+        </div>
+        <div class="bg-gradient-to-br from-emerald-600/20 to-emerald-700/10 rounded-2xl border border-emerald-500/30 p-4 text-center">
+          <div class="text-2xl font-black text-emerald-300" id="kar-net">0 ₺</div>
+          <div class="text-emerald-400/70 text-xs font-semibold mt-1">Net Kâr / Zarar</div>
+          <div class="text-dark-500 text-[10px] mt-0.5" id="kar-net-marj">Net marj: 0%</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-4 text-center">
+          <div class="text-2xl font-black text-gray-200" id="kar-ortalama-sepet">0 ₺</div>
+          <div class="text-dark-400 text-xs font-semibold mt-1">Ortalama Sepet</div>
+        </div>
+        <div class="bg-dark-900/80 rounded-2xl border border-dark-700/40 p-4 text-center">
+          <div class="text-2xl font-black text-fire-300" id="kar-siparis-adet">0</div>
+          <div class="text-dark-400 text-xs font-semibold mt-1">Sipariş / Adet</div>
         </div>
       </div>
 
@@ -760,6 +797,9 @@
                   class="w-full px-3 py-2.5 bg-dark-800 border border-dark-600/50 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-fire-500/50" />
               </div>
               <div class="flex flex-col justify-end gap-2">
+                <label class="flex items-center gap-2 cursor-pointer text-sm text-dark-300" title="Kapatırsanız Stok ve Reçete sekmeleri gizlenir; sipariş tamamlanırken malzeme düşümü yapılmaz.">
+                  <input id="ayar-stok-aktif" type="checkbox" class="w-4 h-4 accent-fire-500" /> Stok takibi
+                </label>
                 <label class="flex items-center gap-2 cursor-pointer text-sm text-dark-300">
                   <input id="ayar-kritik-uyari" type="checkbox" class="w-4 h-4 accent-fire-500" /> Kritik stok uyarısı
                 </label>
@@ -768,6 +808,7 @@
                 </label>
               </div>
             </div>
+            <p class="text-dark-500 text-xs">Stok takibini kapatırsanız reçete, malzeme maliyeti ve kritik stok uyarıları devre dışı kalır; kârlılık raporlarında yalnızca ciro ve giderler görünür.</p>
           </div>
         </div>
 
